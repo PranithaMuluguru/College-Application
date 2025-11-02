@@ -13,6 +13,10 @@ import jwt
 from typing import Optional, List
 from enum import Enum
 
+from newapp.ai_service import AIAssistant
+from newapp.web_scraper import scrape_iitpkd_website
+from difflib import SequenceMatcher
+    
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -139,6 +143,17 @@ class MessMenuItemCreate(BaseModel):
     description: Optional[str] = None
     rating: Optional[float] = 0.0
     votes: Optional[int] = 0
+
+    # Add after your existing models
+
+# ================ AI MODELS ================
+class ChatMessage(BaseModel):
+    message: str
+
+class AddAnswerRequest(BaseModel):
+    question_id: int
+    answer: str
+    category: Optional[str] = None
 
 # ================ UTILITY FUNCTIONS ================
 def generate_otp(length=6):
@@ -1329,6 +1344,434 @@ async def startup_event():
         print(f"Error during startup: {e}")
     finally:
         db.close()
+
+
+# Add these models to your existing main.py
+
+# ================ CALENDAR EVENT MODELS ================
+class EventType(str, Enum):
+    ACADEMIC = "Academic"
+    EXAM = "Exam"
+    ASSIGNMENT = "Assignment"
+    CLUB = "Club"
+    SPORTS = "Sports"
+    CULTURAL = "Cultural"
+    WORKSHOP = "Workshop"
+    OTHER = "Other"
+
+class CalendarEventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    event_type: EventType
+    start_datetime: datetime
+    end_datetime: datetime
+    location: Optional[str] = None
+    is_all_day: Optional[bool] = False
+    reminder_minutes: Optional[int] = 30
+
+class CalendarEventUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    event_type: Optional[EventType] = None
+    start_datetime: Optional[datetime] = None
+    end_datetime: Optional[datetime] = None
+    location: Optional[str] = None
+    is_all_day: Optional[bool] = None
+    reminder_minutes: Optional[int] = None
+
+# ================ CALENDAR EVENT ENDPOINTS ================
+@app.get("/calendar-events/{user_id}")
+async def get_calendar_events(
+    user_id: int, 
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Get calendar events for a user, optionally filtered by date range"""
+    try:
+        query = db.query(models.CalendarEvent).filter(
+            models.CalendarEvent.user_id == user_id
+        )
+        
+        if start_date:
+            query = query.filter(models.CalendarEvent.start_datetime >= start_date)
+        if end_date:
+            query = query.filter(models.CalendarEvent.start_datetime <= end_date)
+        
+        events = query.order_by(models.CalendarEvent.start_datetime).all()
+        return events
+    except Exception as e:
+        print(f"Error fetching calendar events: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching calendar events"
+        )
+
+@app.post("/calendar-events/{user_id}")
+async def create_calendar_event(
+    user_id: int, 
+    event: CalendarEventCreate, 
+    db: Session = Depends(get_db)
+):
+    try:
+        db_event = models.CalendarEvent(
+            user_id=user_id,
+            title=event.title,
+            description=event.description,
+            event_type=event.event_type,
+            start_datetime=event.start_datetime,
+            end_datetime=event.end_datetime,
+            location=event.location,
+            is_all_day=event.is_all_day,
+            reminder_minutes=event.reminder_minutes
+        )
+        db.add(db_event)
+        db.commit()
+        db.refresh(db_event)
+        return db_event
+    except Exception as e:
+        print(f"Error creating calendar event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating calendar event"
+        )
+
+@app.put("/calendar-events/{event_id}")
+async def update_calendar_event(
+    event_id: int, 
+    event: CalendarEventUpdate, 
+    db: Session = Depends(get_db)
+):
+    try:
+        db_event = db.query(models.CalendarEvent).filter(
+            models.CalendarEvent.id == event_id
+        ).first()
+        
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        update_data = event.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(db_event, field, value)
+        
+        db.commit()
+        db.refresh(db_event)
+        return db_event
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating calendar event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error updating calendar event"
+        )
+
+@app.delete("/calendar-events/{event_id}")
+async def delete_calendar_event(event_id: int, db: Session = Depends(get_db)):
+    try:
+        db_event = db.query(models.CalendarEvent).filter(
+            models.CalendarEvent.id == event_id
+        ).first()
+        
+        if not db_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+        
+        db.delete(db_event)
+        db.commit()
+        return {"message": "Event deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting calendar event: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error deleting calendar event"
+        )
+
+# ================ QUICK STATS ENDPOINT ================
+@app.get("/academics/stats/{user_id}")
+async def get_academic_stats(user_id: int, db: Session = Depends(get_db)):
+    """Get quick academic statistics for dashboard"""
+    try:
+        # Count upcoming classes today
+        today = datetime.now().strftime("%A")[:3]
+        classes_today = db.query(models.TimetableEntry).filter(
+            models.TimetableEntry.user_id == user_id,
+            models.TimetableEntry.day_of_week == today
+        ).count()
+        
+        # Count upcoming exams (next 30 days)
+        upcoming_exams = db.query(models.ExamEntry).filter(
+            models.ExamEntry.user_id == user_id,
+            models.ExamEntry.date >= datetime.now().strftime("%Y-%m-%d"),
+            models.ExamEntry.date <= (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+        ).count()
+        
+        # Get CGPA
+        grades = db.query(models.GradeEntry).filter(
+            models.GradeEntry.user_id == user_id
+        ).all()
+        cgpa_info = calculate_cgpa(grades)
+        
+        # Count total assignments (calendar events of type assignment)
+        assignments = db.query(models.CalendarEvent).filter(
+            models.CalendarEvent.user_id == user_id,
+            models.CalendarEvent.event_type == models.EventType.ASSIGNMENT,
+            models.CalendarEvent.start_datetime >= datetime.now()
+        ).count()
+        
+        return {
+            "classes_today": classes_today,
+            "upcoming_exams": upcoming_exams,
+            "cgpa": cgpa_info["cgpa"],
+            "pending_assignments": assignments
+        }
+    except Exception as e:
+        print(f"Error fetching academic stats: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching academic stats"
+        )
+
+
+# ================ AI ENDPOINTS ================
+@app.post("/ai/ask")
+async def ask_ai(
+    user_id: int,
+    chat: ChatMessage,
+    db: Session = Depends(get_db)
+):
+    """Ask AI assistant a question"""
+    try:
+        assistant = AIAssistant(db)
+        response = await assistant.get_response(user_id, chat.message)
+        return response
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return {
+            "response": "Sorry, I'm having trouble right now. Please contact office@iitpkd.ac.in",
+            "confidence": "error"
+        }
+
+@app.get("/ai/chat-history/{user_id}")
+async def get_chat_history(
+    user_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """Get user's chat history"""
+    history = db.query(models.ChatHistory).filter(
+        models.ChatHistory.user_id == user_id
+    ).order_by(
+        models.ChatHistory.created_at.desc()
+    ).limit(limit).all()
+    
+    return [
+        {
+            "id": msg.id,
+            "message": msg.message,
+            "is_user": msg.is_user,
+            "confidence_score": msg.confidence_score,
+            "created_at": msg.created_at.isoformat()
+        }
+        for msg in reversed(history)
+    ]
+
+@app.delete("/ai/chat-history/{user_id}")
+async def clear_chat_history(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Clear user's chat history"""
+    db.query(models.ChatHistory).filter(
+        models.ChatHistory.user_id == user_id
+    ).delete()
+    db.commit()
+    return {"message": "Chat history cleared"}
+
+# ================ ADMIN AI ENDPOINTS ================
+@app.get("/ai/question-queue")
+async def get_question_queue(
+    status: Optional[str] = "unanswered",
+    db: Session = Depends(get_db)
+):
+    """Get unanswered questions (Admin)"""
+    
+    query = db.query(models.UnansweredQuestion)
+    
+    if status:
+        query = query.filter(
+            models.UnansweredQuestion.status == status
+        )
+    
+    questions = query.order_by(
+        models.UnansweredQuestion.ask_count.desc(),
+        models.UnansweredQuestion.created_at.desc()
+    ).all()
+    
+    return {
+        "total": len(questions),
+        "questions": [
+            {
+                "id": q.id,
+                "question": q.question_text,
+                "category": q.category,
+                "ask_count": q.ask_count,
+                "status": q.status.value,
+                "created_at": q.created_at.isoformat(),
+                "confidence_score": q.confidence_score
+            }
+            for q in questions
+        ]
+    }
+
+@app.post("/ai/add-answer")
+async def add_answer_to_knowledge(
+    request: AddAnswerRequest,
+    db: Session = Depends(get_db)
+):
+    """Add answer to knowledge base and resolve question (Admin)"""
+    
+    # Get the question
+    question = db.query(models.UnansweredQuestion).filter(
+        models.UnansweredQuestion.id == request.question_id
+    ).first()
+    
+    if not question:
+        raise HTTPException(status_code=404, detail="Question not found")
+    
+    # Add to knowledge base
+    kb_entry = models.KnowledgeBase(
+        category=request.category or question.category,
+        content=f"Q: {question.question_text}\n\nA: {request.answer}",
+        source_url="admin_added",
+        keywords=','.join(question.question_text.lower().split()[:10])
+    )
+    db.add(kb_entry)
+    
+    # Mark question as answered
+    question.status = models.QuestionStatus.ANSWERED
+    question.admin_answer = request.answer
+    question.resolved_at = datetime.utcnow()
+    
+    # Find and resolve similar questions
+    similar_questions = db.query(models.UnansweredQuestion).filter(
+        models.UnansweredQuestion.status == models.QuestionStatus.UNANSWERED,
+        models.UnansweredQuestion.id != question.id
+    ).all()
+    
+    resolved_count = 0
+    for q in similar_questions:
+        similarity = SequenceMatcher(
+            None, 
+            question.question_text.lower(), 
+            q.question_text.lower()
+        ).ratio()
+        
+        if similarity > 0.7:  # 70% similar
+            q.status = models.QuestionStatus.DUPLICATE
+            q.similar_question_id = question.id
+            q.resolved_at = datetime.utcnow()
+            resolved_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": "Answer added successfully",
+        "resolved_similar_questions": resolved_count
+    }
+
+@app.get("/ai/analytics")
+async def get_ai_analytics(db: Session = Depends(get_db)):
+    """Get AI analytics (Admin)"""
+    
+    total_questions = db.query(models.UnansweredQuestion).count()
+    answered = db.query(models.UnansweredQuestion).filter(
+        models.UnansweredQuestion.status == models.QuestionStatus.ANSWERED
+    ).count()
+    pending = db.query(models.UnansweredQuestion).filter(
+        models.UnansweredQuestion.status == models.QuestionStatus.UNANSWERED
+    ).count()
+    
+    # Most asked questions
+    top_questions = db.query(models.UnansweredQuestion).order_by(
+        models.UnansweredQuestion.ask_count.desc()
+    ).limit(10).all()
+    
+    # Category distribution
+    category_counts = db.query(
+        models.UnansweredQuestion.category,
+        func.count(models.UnansweredQuestion.id)
+    ).group_by(models.UnansweredQuestion.category).all()
+    
+    kb_entries = db.query(models.KnowledgeBase).count()
+    
+    return {
+        "total_questions": total_questions,
+        "answered": answered,
+        "pending": pending,
+        "knowledge_base_entries": kb_entries,
+        "top_questions": [
+            {
+                "question": q.question_text,
+                "ask_count": q.ask_count,
+                "category": q.category
+            }
+            for q in top_questions
+        ],
+        "categories": [
+            {"category": cat, "count": count}
+            for cat, count in category_counts
+        ]
+    }
+
+@app.post("/ai/refresh-knowledge")
+async def refresh_knowledge_base(db: Session = Depends(get_db)):
+    """Refresh knowledge base by re-scraping website (Admin)"""
+    try:
+        # Clear old entries
+        db.query(models.KnowledgeBase).filter(
+            models.KnowledgeBase.source_url != "admin_added"
+        ).delete()
+        db.commit()
+        
+        # Re-scrape
+        scrape_iitpkd_website(db)
+        
+        count = db.query(models.KnowledgeBase).count()
+        return {
+            "message": "Knowledge base refreshed",
+            "total_entries": count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Update startup event
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database tables and populate data on startup"""
+    db = SessionLocal()
+    try:
+        # Existing code...
+        fix_todo_table_schema(db)
+        populate_mess_menu_data(db)
+        
+        # Initialize AI knowledge base
+        kb_count = db.query(models.KnowledgeBase).count()
+        if kb_count == 0:
+            print("Initializing AI knowledge base by scraping IIT Palakkad website...")
+            scrape_iitpkd_website(db)
+            print(f"Knowledge base initialized with {db.query(models.KnowledgeBase).count()} entries")
+        else:
+            print(f"Knowledge base already exists ({kb_count} entries)")
+        
+        print("Database initialized successfully!")
+        
+    except Exception as e:
+        print(f"Error during startup: {e}")
+    finally:
+        db.close()    
+
 
 @app.get("/")
 async def root():

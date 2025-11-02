@@ -16,6 +16,7 @@ import ClubDetailScreen from './src/screens/ClubDetailScreen';
 import ClubAnnouncementsScreen from './src/screens/ClubAnnouncementsScreen';
 import BusScheduleScreen from './src/screens/BusScheduleScreen'; // Fixed import
 
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {

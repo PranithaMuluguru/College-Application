@@ -13,10 +13,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 
-const API_URL = 'http://10.32.9.125:8000';
+const API_URL = 'http://10.32.10.15:8000';
 
 const AcademicsScreen = ({ route, navigation }) => {
-  // Properly handle userId and userInfo with default values
   const { userId, userInfo } = route.params || {};
   const currentUserId = userId || userInfo?.id;
   
@@ -34,7 +33,6 @@ const AcademicsScreen = ({ route, navigation }) => {
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
   const tabs = ['Timetable', 'Exams', 'Grades'];
 
-  // Check if userId is available before making API calls
   useEffect(() => {
     if (!currentUserId) {
       console.log('User ID not available');
@@ -58,10 +56,8 @@ const AcademicsScreen = ({ route, navigation }) => {
 
     try {
       setLoading(true);
-      console.log('Fetching timetable for user:', currentUserId);
       const response = await axios.get(`${API_URL}/timetable/${currentUserId}`);
       
-      // Initialize organized object with empty arrays for each day
       const organized = {};
       days.forEach(day => { organized[day] = []; });
       
@@ -72,7 +68,6 @@ const AcademicsScreen = ({ route, navigation }) => {
           }
         });
         
-        // Sort by start time
         Object.keys(organized).forEach(day => {
           organized[day].sort((a, b) => a.start_time.localeCompare(b.start_time));
         });
@@ -133,7 +128,6 @@ const AcademicsScreen = ({ route, navigation }) => {
       return;
     }
 
-    // Validate form data
     if (activeTab === 'Timetable') {
       const required = ['course_name', 'start_time', 'end_time', 'teacher', 'room_number'];
       const missing = required.filter(field => !formData[field] || formData[field].trim() === '');
@@ -200,7 +194,6 @@ const AcademicsScreen = ({ route, navigation }) => {
       setEditingItem(null);
       setFormData({});
       
-      // Refresh data
       if (activeTab === 'Timetable') fetchTimetable();
       else if (activeTab === 'Exams') fetchExams();
       else if (activeTab === 'Grades') fetchGrades();
@@ -239,7 +232,6 @@ const AcademicsScreen = ({ route, navigation }) => {
               await axios.delete(endpoint);
               Alert.alert('Success', `${activeTab.slice(0, -1)} deleted successfully`);
               
-              // Refresh data
               if (activeTab === 'Timetable') fetchTimetable();
               else if (activeTab === 'Exams') fetchExams();
               else if (activeTab === 'Grades') fetchGrades();
@@ -310,13 +302,13 @@ const AcademicsScreen = ({ route, navigation }) => {
 
   const renderTimetableContent = () => (
     <View style={styles.contentContainer}>
-      {/* Day Selection */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelector}>
         {days.map(day => (
           <TouchableOpacity
             key={day}
             style={[styles.dayButton, selectedDay === day && styles.selectedDayButton]}
             onPress={() => setSelectedDay(day)}
+            activeOpacity={0.8}
           >
             <Text style={[styles.dayButtonText, selectedDay === day && styles.selectedDayText]}>
               {day}
@@ -325,25 +317,13 @@ const AcademicsScreen = ({ route, navigation }) => {
         ))}
       </ScrollView>
 
-      {/* Loading State */}
       {loading && (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Loading...</Text>
         </View>
       )}
 
-      {/* Schedule for selected day */}
       <View style={styles.scheduleContainer}>
-        <View style={styles.scheduleHeader}>
-          <Ionicons name="time-outline" size={24} color="#666" />
-          <Text style={styles.scheduleTitle}>
-            {selectedDay === 'Mon' ? 'Monday' : 
-             selectedDay === 'Tue' ? 'Tuesday' : 
-             selectedDay === 'Wed' ? 'Wednesday' : 
-             selectedDay === 'Thu' ? 'Thursday' : 'Friday'} Schedule
-          </Text>
-        </View>
-
         {!loading && timetableData[selectedDay]?.length > 0 ? (
           timetableData[selectedDay].map((classItem) => (
             <TouchableOpacity
@@ -351,30 +331,36 @@ const AcademicsScreen = ({ route, navigation }) => {
               style={styles.classCard}
               onLongPress={() => deleteItem(classItem)}
               onPress={() => openModal(classItem)}
+              activeOpacity={0.8}
             >
-              <View style={styles.timeContainer}>
-                <Text style={styles.timeText}>{classItem.start_time}-{classItem.end_time}</Text>
+              <View style={styles.timeIndicator}>
+                <Text style={styles.timeText}>{classItem.start_time}</Text>
+                <View style={styles.timeDivider} />
+                <Text style={styles.timeText}>{classItem.end_time}</Text>
               </View>
               <View style={styles.classDetails}>
                 <Text style={styles.className}>{classItem.course_name}</Text>
-                <Text style={styles.classInfo}>{classItem.room_number} • {classItem.teacher}</Text>
+                <View style={styles.classInfo}>
+                  <Ionicons name="person-outline" size={14} color="#888" />
+                  <Text style={styles.classInfoText}>{classItem.teacher}</Text>
+                </View>
+                <View style={styles.classInfo}>
+                  <Ionicons name="location-outline" size={14} color="#888" />
+                  <Text style={styles.classInfoText}>{classItem.room_number}</Text>
+                </View>
               </View>
             </TouchableOpacity>
           ))
         ) : !loading && (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyStateText}>
-              No classes scheduled for {selectedDay === 'Mon' ? 'Monday' : 
-              selectedDay === 'Tue' ? 'Tuesday' : 
-              selectedDay === 'Wed' ? 'Wednesday' : 
-              selectedDay === 'Thu' ? 'Thursday' : 'Friday'}
-            </Text>
+            <Ionicons name="calendar-outline" size={64} color="#666" />
+            <Text style={styles.emptyStateText}>No classes scheduled</Text>
             <TouchableOpacity 
-              style={styles.addFirstButton}
+              style={styles.addButton}
               onPress={() => openModal()}
+              activeOpacity={0.8}
             >
-              <Ionicons name="add" size={20} color="#4285F4" />
-              <Text style={styles.addFirstText}>Add your first class</Text>
+              <Text style={styles.addButtonText}>Add Class</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -397,10 +383,19 @@ const AcademicsScreen = ({ route, navigation }) => {
             style={styles.examCard}
             onLongPress={() => deleteItem(exam)}
             onPress={() => openModal(exam)}
+            activeOpacity={0.8}
           >
-            <Text style={styles.examName}>{exam.exam_name}</Text>
-            <Text style={styles.examDate}>{new Date(exam.date).toLocaleDateString()}</Text>
-            <Text style={styles.examRoom}>Room: {exam.room_number}</Text>
+            <View style={styles.examHeader}>
+              <Text style={styles.examName}>{exam.exam_name}</Text>
+              <View style={styles.examBadge}>
+                <Ionicons name="calendar" size={12} color="#fff" />
+              </View>
+            </View>
+            <Text style={styles.examDate}>{new Date(exam.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+            <View style={styles.examInfo}>
+              <Ionicons name="location-outline" size={14} color="#888" />
+              <Text style={styles.examRoom}>{exam.room_number}</Text>
+            </View>
             {exam.additional_notes && (
               <Text style={styles.examNotes}>{exam.additional_notes}</Text>
             )}
@@ -408,13 +403,14 @@ const AcademicsScreen = ({ route, navigation }) => {
         ))
       ) : !loading && (
         <View style={styles.emptyState}>
+          <Ionicons name="document-text-outline" size={64} color="#666" />
           <Text style={styles.emptyStateText}>No exams scheduled</Text>
           <TouchableOpacity 
-            style={styles.addFirstButton}
+            style={styles.addButton}
             onPress={() => openModal()}
+            activeOpacity={0.8}
           >
-            <Ionicons name="add" size={20} color="#4285F4" />
-            <Text style={styles.addFirstText}>Add your first exam</Text>
+            <Text style={styles.addButtonText}>Add Exam</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -432,9 +428,17 @@ const AcademicsScreen = ({ route, navigation }) => {
       {!loading && (
         <>
           <View style={styles.cgpaCard}>
-            <Text style={styles.cgpaTitle}>Academic Performance</Text>
-            <Text style={styles.cgpaValue}>CGPA: {cgpaInfo.cgpa || 0}</Text>
-            <Text style={styles.creditsText}>Total Credits: {cgpaInfo.total_credits || 0}</Text>
+            <View style={styles.cgpaHeader}>
+              <Ionicons name="trophy" size={32} color="#f59e0b" />
+              <View style={styles.cgpaInfo}>
+                <Text style={styles.cgpaLabel}>CGPA</Text>
+                <Text style={styles.cgpaValue}>{cgpaInfo.cgpa || '0.00'}</Text>
+              </View>
+            </View>
+            <View style={styles.creditsInfo}>
+              <Text style={styles.creditsLabel}>Total Credits</Text>
+              <Text style={styles.creditsValue}>{cgpaInfo.total_credits || 0}</Text>
+            </View>
           </View>
 
           {gradesData.length > 0 ? (
@@ -444,24 +448,30 @@ const AcademicsScreen = ({ route, navigation }) => {
                 style={styles.gradeCard}
                 onLongPress={() => deleteItem(grade)}
                 onPress={() => openModal(grade)}
+                activeOpacity={0.8}
               >
-                <Text style={styles.courseName}>{grade.course_name}</Text>
-                <View style={styles.gradeDetails}>
-                  <Text style={styles.gradeText}>Grade: {grade.grade}</Text>
-                  <Text style={styles.creditsText}>Credits: {grade.credits}</Text>
+                <View style={styles.gradeHeader}>
+                  <Text style={styles.courseName}>{grade.course_name}</Text>
+                  <View style={styles.gradeBadge}>
+                    <Text style={styles.gradeValue}>{grade.grade}</Text>
+                  </View>
                 </View>
-                <Text style={styles.semesterText}>{grade.semester}</Text>
+                <View style={styles.gradeFooter}>
+                  <Text style={styles.semesterText}>{grade.semester}</Text>
+                  <Text style={styles.creditsText}>{grade.credits} credits</Text>
+                </View>
               </TouchableOpacity>
             ))
           ) : (
             <View style={styles.emptyState}>
+              <Ionicons name="school-outline" size={64} color="#666" />
               <Text style={styles.emptyStateText}>No grades recorded</Text>
               <TouchableOpacity 
-                style={styles.addFirstButton}
+                style={styles.addButton}
                 onPress={() => openModal()}
+                activeOpacity={0.8}
               >
-                <Ionicons name="add" size={20} color="#4285F4" />
-                <Text style={styles.addFirstText}>Add your first grade</Text>
+                <Text style={styles.addButtonText}>Add Grade</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -485,6 +495,7 @@ const AcademicsScreen = ({ route, navigation }) => {
                     formData.day_of_week === day && styles.selectedDayPickerButton
                   ]}
                   onPress={() => setFormData({...formData, day_of_week: day})}
+                  activeOpacity={0.8}
                 >
                   <Text style={[
                     styles.dayPickerText,
@@ -498,31 +509,36 @@ const AcademicsScreen = ({ route, navigation }) => {
           </View>
           <TextInput
             style={styles.input}
-            placeholder="Course Name *"
+            placeholder="Course Name"
+            placeholderTextColor="#666"
             value={formData.course_name}
             onChangeText={(text) => setFormData({...formData, course_name: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Start Time (e.g., 9:00 AM) *"
+            placeholder="Start Time (e.g., 9:00 AM)"
+            placeholderTextColor="#666"
             value={formData.start_time}
             onChangeText={(text) => setFormData({...formData, start_time: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="End Time (e.g., 10:00 AM) *"
+            placeholder="End Time (e.g., 10:00 AM)"
+            placeholderTextColor="#666"
             value={formData.end_time}
             onChangeText={(text) => setFormData({...formData, end_time: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Teacher *"
+            placeholder="Teacher"
+            placeholderTextColor="#666"
             value={formData.teacher}
             onChangeText={(text) => setFormData({...formData, teacher: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Room Number *"
+            placeholder="Room Number"
+            placeholderTextColor="#666"
             value={formData.room_number}
             onChangeText={(text) => setFormData({...formData, room_number: text})}
           />
@@ -533,25 +549,29 @@ const AcademicsScreen = ({ route, navigation }) => {
         <>
           <TextInput
             style={styles.input}
-            placeholder="Exam Name *"
+            placeholder="Exam Name"
+            placeholderTextColor="#666"
             value={formData.exam_name}
             onChangeText={(text) => setFormData({...formData, exam_name: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Date (YYYY-MM-DD) *"
+            placeholder="Date (YYYY-MM-DD)"
+            placeholderTextColor="#666"
             value={formData.date}
             onChangeText={(text) => setFormData({...formData, date: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Room Number *"
+            placeholder="Room Number"
+            placeholderTextColor="#666"
             value={formData.room_number}
             onChangeText={(text) => setFormData({...formData, room_number: text})}
           />
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Additional Notes"
+            placeholderTextColor="#666"
             value={formData.additional_notes}
             onChangeText={(text) => setFormData({...formData, additional_notes: text})}
             multiline
@@ -564,26 +584,30 @@ const AcademicsScreen = ({ route, navigation }) => {
         <>
           <TextInput
             style={styles.input}
-            placeholder="Course Name *"
+            placeholder="Course Name"
+            placeholderTextColor="#666"
             value={formData.course_name}
             onChangeText={(text) => setFormData({...formData, course_name: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Credits *"
+            placeholder="Credits"
+            placeholderTextColor="#666"
             value={formData.credits}
             keyboardType="numeric"
             onChangeText={(text) => setFormData({...formData, credits: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Grade (e.g., A, B+, C) *"
+            placeholder="Grade (e.g., A, B+, C)"
+            placeholderTextColor="#666"
             value={formData.grade}
             onChangeText={(text) => setFormData({...formData, grade: text})}
           />
           <TextInput
             style={styles.input}
-            placeholder="Semester (e.g., Fall 2024) *"
+            placeholder="Semester (e.g., Fall 2024)"
+            placeholderTextColor="#666"
             value={formData.semester}
             onChangeText={(text) => setFormData({...formData, semester: text})}
           />
@@ -592,12 +616,11 @@ const AcademicsScreen = ({ route, navigation }) => {
     }
   };
 
-  // Show error if userId is not available
   if (!currentUserId) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={64} color="#FF6B6B" />
+          <Ionicons name="warning-outline" size={64} color="#ef4444" />
           <Text style={styles.errorTitle}>User ID Not Available</Text>
           <Text style={styles.errorMessage}>
             Please make sure you're properly logged in and try again.
@@ -605,6 +628,7 @@ const AcademicsScreen = ({ route, navigation }) => {
           <TouchableOpacity 
             style={styles.retryButton}
             onPress={() => navigation.goBack()}
+            activeOpacity={0.8}
           >
             <Text style={styles.retryButtonText}>Go Back</Text>
           </TouchableOpacity>
@@ -620,22 +644,14 @@ const AcademicsScreen = ({ route, navigation }) => {
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
+          activeOpacity={0.8}
         >
-          <Ionicons name="arrow-back" size={24} color="#000" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>Academics</Text>
-          <Text style={styles.headerSubtitle}>
-            {userInfo?.department || 'Computer Science'} • {userInfo?.year || '3rd'} Year
-          </Text>
-        </View>
-        <View style={styles.profileContainer}>
-          <View style={styles.profileCircle}>
-            <Text style={styles.profileText}>
-              {userInfo?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'JD'}
-            </Text>
-          </View>
-        </View>
+        <Text style={styles.headerTitle}>Academics</Text>
+        <TouchableOpacity style={styles.addHeaderButton} onPress={() => openModal()} activeOpacity={0.8}>
+          <Ionicons name="add" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       {/* Tab Navigation */}
@@ -645,12 +661,8 @@ const AcademicsScreen = ({ route, navigation }) => {
             key={tab}
             style={[styles.tab, activeTab === tab && styles.activeTab]}
             onPress={() => setActiveTab(tab)}
+            activeOpacity={0.8}
           >
-            <Ionicons 
-              name={tab === 'Timetable' ? 'calendar-outline' : tab === 'Exams' ? 'document-text-outline' : 'school-outline'} 
-              size={20} 
-              color={activeTab === tab ? '#4285F4' : '#666'} 
-            />
             <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
               {tab}
             </Text>
@@ -659,20 +671,12 @@ const AcademicsScreen = ({ route, navigation }) => {
       </View>
 
       {/* Content */}
-      <ScrollView style={styles.scrollContainer}>
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
         {activeTab === 'Timetable' && renderTimetableContent()}
         {activeTab === 'Exams' && renderExamsContent()}
         {activeTab === 'Grades' && renderGradesContent()}
+        <View style={styles.bottomSpace} />
       </ScrollView>
-
-      {/* Floating Action Button */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => openModal()}
-        disabled={loading}
-      >
-        <Ionicons name="add" size={24} color="white" />
-      </TouchableOpacity>
 
       {/* Modal */}
       <Modal
@@ -683,11 +687,23 @@ const AcademicsScreen = ({ route, navigation }) => {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {editingItem ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}
-            </Text>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {editingItem ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  setModalVisible(false);
+                  setEditingItem(null);
+                  setFormData({});
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={24} color="#888" />
+              </TouchableOpacity>
+            </View>
             
-            <ScrollView style={styles.modalScrollView}>
+            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
               {renderModalContent()}
             </ScrollView>
             
@@ -700,6 +716,7 @@ const AcademicsScreen = ({ route, navigation }) => {
                   setFormData({});
                 }}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
@@ -707,6 +724,7 @@ const AcademicsScreen = ({ route, navigation }) => {
                 style={[styles.modalButton, styles.saveButton]}
                 onPress={saveItem}
                 disabled={loading}
+                activeOpacity={0.8}
               >
                 <Text style={styles.saveButtonText}>
                   {loading ? 'Saving...' : 'Save'}
@@ -723,7 +741,7 @@ const AcademicsScreen = ({ route, navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#0a0a0a',
   },
   errorContainer: {
     flex: 1,
@@ -733,26 +751,26 @@ const styles = StyleSheet.create({
   },
   errorTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#FF6B6B',
+    fontWeight: '700',
+    color: '#ef4444',
     marginTop: 16,
     marginBottom: 8,
   },
   errorMessage: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    color: '#888',
     textAlign: 'center',
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: '#3b82f6',
     paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 12,
   },
   retryButtonText: {
-    color: 'white',
-    fontSize: 16,
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '600',
   },
   header: {
@@ -760,153 +778,121 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: 'white',
+    paddingVertical: 16,
+    backgroundColor: '#1a1a1a',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E5E5',
+    borderBottomColor: '#2a2a2a',
   },
   backButton: {
-    padding: 8,
-  },
-  headerContent: {
-    flex: 1,
-    alignItems: 'center',
+    padding: 4,
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  profileContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  profileCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#4285F4',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: 'white',
+  addHeaderButton: {
+    padding: 4,
   },
   tabContainer: {
     flexDirection: 'row',
-    backgroundColor: '#E8E8E8',
-    margin: 20,
-    borderRadius: 25,
-    padding: 4,
+    backgroundColor: '#1a1a1a',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    gap: 8,
   },
   tab: {
     flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
     paddingVertical: 12,
-    borderRadius: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
   },
   activeTab: {
-    backgroundColor: 'white',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   tabText: {
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   activeTabText: {
-    color: '#4285F4',
-    fontWeight: '600',
+    color: '#fff',
   },
   scrollContainer: {
     flex: 1,
   },
   contentContainer: {
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingTop: 20,
   },
   loadingContainer: {
     alignItems: 'center',
-    padding: 20,
+    padding: 40,
   },
   loadingText: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 14,
+    color: '#888',
   },
   daySelector: {
     marginBottom: 20,
+    flexDirection: 'row',
   },
   dayButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#1a1a1a',
     paddingHorizontal: 20,
     paddingVertical: 12,
-    borderRadius: 20,
-    marginRight: 10,
+    borderRadius: 12,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
   },
   selectedDayButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   dayButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666',
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#888',
   },
   selectedDayText: {
-    color: 'white',
-    fontWeight: '600',
+    color: '#fff',
   },
   scheduleContainer: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  scheduleHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  scheduleTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 10,
-    color: '#000',
+    gap: 12,
   },
   classCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 16,
     flexDirection: 'row',
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
     borderLeftWidth: 4,
-    borderLeftColor: '#4285F4',
+    borderLeftColor: '#3b82f6',
   },
-  timeContainer: {
-    marginRight: 15,
-    minWidth: 80,
+  timeIndicator: {
+    marginRight: 16,
+    alignItems: 'center',
+    minWidth: 60,
   },
   timeText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#4285F4',
+    fontWeight: '700',
+    color: '#3b82f6',
+  },
+  timeDivider: {
+    width: 2,
+    height: 8,
+    backgroundColor: '#3b82f6',
+    marginVertical: 4,
   },
   classDetails: {
     flex: 1,
@@ -914,230 +900,292 @@ const styles = StyleSheet.create({
   className: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
+    color: '#fff',
+    marginBottom: 8,
   },
   classInfo: {
-    fontSize: 12,
-    color: '#666',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  classInfoText: {
+    fontSize: 13,
+    color: '#888',
   },
   examCard: {
-    backgroundColor: 'white',
-    borderRadius: 15,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  examHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   examName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 8,
+    fontWeight: '700',
+    color: '#fff',
+    flex: 1,
+  },
+  examBadge: {
+    backgroundColor: '#3b82f6',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   examDate: {
     fontSize: 14,
-    color: '#4285F4',
-    marginBottom: 4,
+    color: '#3b82f6',
+    marginBottom: 8,
+    fontWeight: '600',
   },
-  examRoom: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 4,
-  },
-  examNotes: {
-    fontSize: 14,
-    color: '#666',
-    fontStyle: 'italic',
-    marginTop: 8,
-  },
-  cgpaCard: {
-    backgroundColor: '#4285F4',
-    borderRadius: 15,
-    padding: 20,
-    marginBottom: 20,
-  },
-  cgpaTitle: {
-    fontSize: 16,
-    color: 'white',
+  examInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginBottom: 8,
   },
-  cgpaValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
+  examRoom: {
+    fontSize: 13,
+    color: '#888',
+  },
+  examNotes: {
+    fontSize: 13,
+    color: '#888',
+    fontStyle: 'italic',
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a2a',
+  },
+  cgpaCard: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: '#f59e0b',
+  },
+  cgpaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cgpaInfo: {
+    marginLeft: 16,
+  },
+  cgpaLabel: {
+    fontSize: 12,
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
     marginBottom: 4,
   },
-  creditsText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+  cgpaValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  creditsInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a2a',
+  },
+  creditsLabel: {
+    fontSize: 13,
+    color: '#888',
+    fontWeight: '600',
+  },
+  creditsValue: {
+    fontSize: 16,
+    color: '#f59e0b',
+    fontWeight: '700',
   },
   gradeCard: {
-    backgroundColor: 'white',
-    borderRadius: 15,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
     padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  gradeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   courseName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#000',
-    marginBottom: 8,
+    color: '#fff',
+    flex: 1,
   },
-  gradeDetails: {
+  gradeBadge: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  gradeValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  gradeFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  gradeText: {
-    fontSize: 14,
-    color: '#4285F4',
-    fontWeight: '600',
+    alignItems: 'center',
   },
   semesterText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#888',
+  },
+  creditsText: {
+    fontSize: 13,
+    color: '#888',
+    fontWeight: '600',
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
   },
   emptyStateText: {
     fontSize: 16,
     color: '#666',
-    marginBottom: 16,
-    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 20,
   },
-  addFirstButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#E3F2FD',
-    paddingHorizontal: 16,
+  addButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 24,
     paddingVertical: 12,
-    borderRadius: 25,
+    borderRadius: 12,
   },
-  addFirstText: {
-    color: '#4285F4',
+  addButtonText: {
+    color: '#fff',
     fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 14,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 30,
-    width: 56,
-    height: 56,
-    backgroundColor: '#4285F4',
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+  bottomSpace: {
+    height: 40,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 20,
-    width: '90%',
-    maxHeight: '80%',
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   modalTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    textAlign: 'center',
-    color: '#000',
+    fontWeight: '700',
+    color: '#fff',
   },
   modalScrollView: {
     maxHeight: 400,
   },
   inputLabel: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#333',
+    color: '#888',
     marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   input: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    fontSize: 15,
+    color: '#fff',
     borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    fontSize: 16,
-    backgroundColor: '#FAFAFA',
+    borderColor: '#2a2a2a',
   },
   textArea: {
-    height: 80,
+    height: 100,
     textAlignVertical: 'top',
   },
   pickerContainer: {
-    marginBottom: 15,
+    marginBottom: 12,
   },
   dayPickerScroll: {
     flexDirection: 'row',
   },
   dayPickerButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: '#0a0a0a',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 15,
+    paddingVertical: 10,
+    borderRadius: 12,
     marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
   },
   selectedDayPickerButton: {
-    backgroundColor: '#4285F4',
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
   },
   dayPickerText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
+    fontSize: 13,
+    color: '#888',
+    fontWeight: '600',
   },
   selectedDayPickerText: {
-    color: 'white',
-    fontWeight: '600',
+    color: '#fff',
   },
   modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
     marginTop: 20,
   },
   modalButton: {
     flex: 1,
-    paddingVertical: 15,
-    borderRadius: 10,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#E0E0E0',
-    marginRight: 10,
+    backgroundColor: '#0a0a0a',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
   },
   saveButton: {
-    backgroundColor: '#4285F4',
-    marginLeft: 10,
+    backgroundColor: '#3b82f6',
   },
   cancelButtonText: {
-    color: '#666',
+    color: '#888',
     fontWeight: '600',
+    fontSize: 15,
   },
   saveButtonText: {
-    color: 'white',
+    color: '#fff',
     fontWeight: '600',
+    fontSize: 15,
   },
 });
 

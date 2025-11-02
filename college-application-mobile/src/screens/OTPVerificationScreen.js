@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://10.32.9.125:8000'; // Change to your server IP
+const API_BASE_URL = 'http://10.32.10.15:8000'; // Change to your server IP
 
 const OTPVerificationScreen = ({ route, navigation }) => {
   const { email } = route.params;
