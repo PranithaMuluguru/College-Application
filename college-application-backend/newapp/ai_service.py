@@ -11,7 +11,7 @@ import re
 import os
 
 # Configure OpenAI
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "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")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 class AIAssistant:
