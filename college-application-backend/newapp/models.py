@@ -1,4 +1,15 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Float, Text, Enum as SQLAlchemyEnum, Date, ForeignKey
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    Boolean,
+    Float,
+    Text,
+    Enum as SQLAlchemyEnum,
+    Date,
+    ForeignKey,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -36,7 +47,9 @@ class EventType(enum.Enum):
     CULTURAL = "Cultural"
     WORKSHOP = "Workshop"
     OTHER = "Other"
+# Add missing columns
 
+# Main User model
 class User(Base):
     __tablename__ = "users"
 
@@ -52,19 +65,43 @@ class User(Base):
     verification_otp = Column(String, nullable=True)
     otp_expiry = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
     # Relationships
     calendar_events = relationship("CalendarEvent", back_populates="user")
-    chat_history = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
-    unanswered_queries = relationship("UnansweredQuestion", back_populates="user", cascade="all, delete-orphan")
+    chat_history = relationship(
+        "ChatHistory", back_populates="user", cascade="all, delete-orphan"
+    )
+    unanswered_queries = relationship(
+        "UnansweredQuestion", back_populates="user", cascade="all, delete-orphan"
+    )
+    attendance_records = relationship("AttendanceRecord", back_populates="user")
+    timetable_entries = relationship("TimetableEntry", back_populates="user")
+    courses = relationship("Course", back_populates="user", cascade="all, delete-orphan")
 
+class Course(Base):
+    __tablename__ = "courses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    start_date = Column(Date, nullable=True)
+    course_name = Column(String, nullable=False)
+    teacher = Column(String, nullable=True)
+    start_date = Column(Date, nullable=True)  # Add start date
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User", back_populates="courses")
+    timetable_entries = relationship("TimetableEntry", back_populates="course")
 
 class TimetableEntry(Base):
     __tablename__ = "timetable_entries"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("courses.id"), nullable=False)  # Add this
     day_of_week = Column(String, nullable=False)
     start_time = Column(String, nullable=False)
     end_time = Column(String, nullable=False)
@@ -72,44 +109,58 @@ class TimetableEntry(Base):
     teacher = Column(String, nullable=False)
     room_number = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user = relationship("User", back_populates="timetable_entries")
+    course = relationship("Course", back_populates="timetable_entries")  # Add this
+    attendance_records = relationship(
+        "AttendanceRecord", back_populates="timetable_entry"
+    )
 
 class ExamEntry(Base):
     __tablename__ = "exam_entries"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     exam_name = Column(String, nullable=False)
     date = Column(String, nullable=False)
     room_number = Column(String, nullable=False)
     additional_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 class GradeEntry(Base):
     __tablename__ = "grade_entries"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     course_name = Column(String, nullable=False)
     credits = Column(Float, nullable=False)
     grade = Column(String, nullable=False)
     semester = Column(String, nullable=False)
     category_id = Column(Integer, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 class TodoItem(Base):
     __tablename__ = "todo_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     task = Column(String, nullable=False)
     is_completed = Column(Boolean, default=False)
     priority = Column(String, default="medium")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 class MessMenuItem(Base):
     __tablename__ = "mess_menu_items"
@@ -123,11 +174,13 @@ class MessMenuItem(Base):
     rating = Column(Float, nullable=True, default=0.0)
     votes = Column(Integer, nullable=True, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 class CalendarEvent(Base):
     __tablename__ = "calendar_events"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String, nullable=False)
@@ -140,16 +193,13 @@ class CalendarEvent(Base):
     reminder_minutes = Column(Integer, default=30)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Relationship
     user = relationship("User", back_populates="calendar_events")
 
-
-# Add these classes to your models.py file
-
 class ChatHistory(Base):
     __tablename__ = "chat_history"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     message = Column(Text, nullable=False)
@@ -161,11 +211,11 @@ class ChatHistory(Base):
 
 class KnowledgeBase(Base):
     __tablename__ = "knowledge_base"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     category = Column(String(100), nullable=False, index=True)
     content = Column(Text, nullable=False)
-    title = Column(String(255), nullable=True)  # ⭐ ADD THIS LINE
+    title = Column(String(255), nullable=True)  # ⭐ Added title field
 
     source_url = Column(String(500), nullable=True)
     keywords = Column(Text, nullable=True)  # Comma-separated keywords
@@ -180,7 +230,7 @@ class QuestionStatus(enum.Enum):
 
 class UnansweredQuestion(Base):
     __tablename__ = "unanswered_questions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     question_text = Column(Text, nullable=False)
@@ -197,4 +247,27 @@ class UnansweredQuestion(Base):
 
     user = relationship("User", back_populates="unanswered_queries")
 
-    
+# Attendance Status Enum
+class AttendanceStatus(enum.Enum):
+    PRESENT = "present"
+    ABSENT = "absent"
+    CANCELLED = "cancelled"
+
+# Attendance Record Model
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    timetable_entry_id = Column(
+        Integer, ForeignKey("timetable_entries.id"), nullable=False
+    )
+    date = Column(Date, nullable=False)
+    status = Column(String, nullable=False)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    user = relationship("User", back_populates="attendance_records")
+    timetable_entry = relationship("TimetableEntry", back_populates="attendance_records")

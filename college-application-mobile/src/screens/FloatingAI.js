@@ -17,7 +17,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 
-const API_URL = 'http://10.32.10.15:8000'; // Replace with your server IP
+const API_URL = 'http://10.32.9.170:8000'; // Replace with your server IP
 
 const FloatingAI = ({ userId }) => {
   const [isOpen, setIsOpen] = useState(false);

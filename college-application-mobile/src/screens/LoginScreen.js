@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://10.32.10.15:8000';
+const API_BASE_URL = 'http://10.32.9.170:8000';
 
 const LoginScreen = ({ navigation }) => {
   const [identifier, setIdentifier] = useState('');

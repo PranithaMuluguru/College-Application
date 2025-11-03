@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import FloatingAI from './FloatingAI';
 
-const API_URL = 'http://10.32.10.15:8000';
+const API_URL = 'http://10.32.9.170:8000';
 
 const HomeScreen = ({ navigation, route }) => {
   const userData = route.params?.user || {};

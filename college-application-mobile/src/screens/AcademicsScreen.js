@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -8,12 +8,30 @@ import {
   Alert,
   Modal,
   TextInput,
-  SafeAreaView
+  SafeAreaView,
+  Dimensions,
+  FlatList,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
+import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
+import * as Notifications from 'expo-notifications';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import ClockTimePicker from './ClockTimePicker';
+import CalendarPicker from './CalendarPicker'; // Import the calendar picker
 
-const API_URL = 'http://10.32.10.15:8000';
+const API_URL = 'http://10.32.9.170:8000';
+const { width } = Dimensions.get('window');
+
+// Configure notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 const AcademicsScreen = ({ route, navigation }) => {
   const { userId, userInfo } = route.params || {};
@@ -29,30 +47,42 @@ const AcademicsScreen = ({ route, navigation }) => {
   const [editingItem, setEditingItem] = useState(null);
   const [formData, setFormData] = useState({});
   const [loading, setLoading] = useState(false);
+  const [attendanceData, setAttendanceData] = useState({});
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [selectedClassForAttendance, setSelectedClassForAttendance] = useState(null);
+  const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerType, setTimePickerType] = useState('start');
+  const [attendanceStatus, setAttendanceStatus] = useState('present');
+  const [showCalendarPicker, setShowCalendarPicker] = useState(false); // Add calendar picker state
+  
+  // Course-based attendance tracking
+  const [coursesData, setCoursesData] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [courseAttendanceStats, setCourseAttendanceStats] = useState({});
+  const [courseAttendance, setCourseAttendance] = useState({});
 
   const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
   const tabs = ['Timetable', 'Exams', 'Grades'];
 
+  // Get today's day in abbreviated format (Mon, Tue, etc.)
+  const getTodayDay = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[new Date().getDay()];
+  };
+
+  // Set selected day to today on first load
   useEffect(() => {
-    if (!currentUserId) {
-      console.log('User ID not available');
-      return;
+    const today = getTodayDay();
+    if (days.includes(today)) {
+      setSelectedDay(today);
     }
+  }, []);
 
-    if (activeTab === 'Timetable') {
-      fetchTimetable();
-    } else if (activeTab === 'Exams') {
-      fetchExams();
-    } else if (activeTab === 'Grades') {
-      fetchGrades();
-    }
-  }, [activeTab, currentUserId]);
-
-  const fetchTimetable = async () => {
-    if (!currentUserId) {
-      Alert.alert('Error', 'User ID not available');
-      return;
-    }
+  // Memoized fetch functions to prevent infinite loops
+  const fetchTimetable = useCallback(async () => {
+    if (!currentUserId || loading) return;
 
     try {
       setLoading(true);
@@ -80,13 +110,77 @@ const AcademicsScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUserId, loading]);
 
-  const fetchExams = async () => {
-    if (!currentUserId) {
-      Alert.alert('Error', 'User ID not available');
-      return;
+  const fetchAttendance = useCallback(async () => {
+    if (!currentUserId || loading) return;
+
+    try {
+      const response = await axios.get(`${API_URL}/attendance/${currentUserId}`);
+      
+      const organized = {};
+      if (response.data && Array.isArray(response.data)) {
+        response.data.forEach(item => {
+          if (!organized[item.timetable_entry_id]) {
+            organized[item.timetable_entry_id] = [];
+          }
+          organized[item.timetable_entry_id].push(item);
+        });
+      }
+      
+      setAttendanceData(organized);
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+      setAttendanceData({});
     }
+  }, [currentUserId, loading]);
+
+  const fetchCourses = useCallback(async () => {
+    if (!currentUserId || loading) return;
+    
+    try {
+      const response = await axios.get(`${API_URL}/courses/${currentUserId}`);
+      setCoursesData(response.data || []);
+      
+      if (response.data && response.data.length > 0) {
+        const statsPromises = response.data.map(course => 
+          axios.get(`${API_URL}/attendance/course-stats/${currentUserId}/${course.id}`)
+        );
+        
+        try {
+          const statsResults = await Promise.all(statsPromises);
+          const stats = {};
+          statsResults.forEach((result, index) => {
+            stats[response.data[index].id] = result.data;
+          });
+          setCourseAttendanceStats(stats);
+        } catch (statsError) {
+          console.error('Error fetching course stats:', statsError);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      setCoursesData([]);
+    }
+  }, [currentUserId, loading]);
+
+  const fetchCourseAttendance = useCallback(async () => {
+    if (!currentUserId || loading) return;
+    
+    try {
+      const response = await axios.get(`${API_URL}/attendance/course-stats/${currentUserId}`);
+      
+      if (response.data && typeof response.data === 'object') {
+        setCourseAttendance(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching course attendance:', error);
+      setCourseAttendance({});
+    }
+  }, [currentUserId, loading]);
+
+  const fetchExams = useCallback(async () => {
+    if (!currentUserId || loading) return;
 
     try {
       setLoading(true);
@@ -98,13 +192,10 @@ const AcademicsScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUserId, loading]);
 
-  const fetchGrades = async () => {
-    if (!currentUserId) {
-      Alert.alert('Error', 'User ID not available');
-      return;
-    }
+  const fetchGrades = useCallback(async () => {
+    if (!currentUserId || loading) return;
 
     try {
       setLoading(true);
@@ -120,6 +211,135 @@ const AcademicsScreen = ({ route, navigation }) => {
     } finally {
       setLoading(false);
     }
+  }, [currentUserId, loading]);
+
+  // Fixed useEffect to prevent infinite loops
+  useEffect(() => {
+    if (!currentUserId) {
+      console.log('User ID not available');
+      return;
+    }
+
+    const loadData = async () => {
+      if (activeTab === 'Timetable') {
+        await fetchTimetable();
+        await fetchAttendance();
+        await fetchCourses();
+        await fetchCourseAttendance();
+      } else if (activeTab === 'Exams') {
+        await fetchExams();
+      } else if (activeTab === 'Grades') {
+        await fetchGrades();
+      }
+    };
+
+    loadData();
+  }, [activeTab, currentUserId]);
+
+  const markAttendance = async (status) => {
+    if (!currentUserId || !selectedClassForAttendance) {
+      Alert.alert('Error', 'Could not mark attendance');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      
+      const response = await axios.post(`${API_URL}/attendance/${currentUserId}`, {
+        timetable_entry_id: selectedClassForAttendance.id,
+        status: status,
+        date: selectedDate
+      });
+      
+      const newAttendanceData = { ...attendanceData };
+      if (!newAttendanceData[selectedClassForAttendance.id]) {
+        newAttendanceData[selectedClassForAttendance.id] = [];
+      }
+      
+      const existingIndex = newAttendanceData[selectedClassForAttendance.id].findIndex(
+        entry => entry.date === selectedDate
+      );
+      
+      if (existingIndex >= 0) {
+        newAttendanceData[selectedClassForAttendance.id][existingIndex] = response.data;
+      } else {
+        newAttendanceData[selectedClassForAttendance.id].push(response.data);
+      }
+      
+      setAttendanceData(newAttendanceData);
+      
+      await fetchCourseAttendance();
+      await fetchCourses();
+      
+      Alert.alert('Success', `Attendance marked as ${status} for ${new Date(selectedDate).toLocaleDateString()}`);
+      setShowAttendanceModal(false);
+      
+    } catch (error) {
+      console.error('Error marking attendance:', error);
+      Alert.alert('Error', 'Failed to mark attendance');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Updated attendance analytics - default to absent if not marked
+  const getAttendanceAnalytics = (classItem) => {
+    const courseStats = Object.values(courseAttendance).find(stat => 
+      stat.course_name === classItem.course_name
+    );
+    
+    if (courseStats) {
+      return {
+        total: courseStats.total_classes,
+        present: courseStats.present,
+        absent: courseStats.absent,
+        canceled: courseStats.cancelled,
+        percentage: courseStats.attendance_percentage
+      };
+    }
+    
+    const entries = attendanceData[classItem.id] || [];
+    
+    // Calculate total classes that should have happened (assuming semester started)
+    const semesterStart = new Date('2024-08-01'); // Adjust based on your semester start
+    const today = new Date();
+    const dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(classItem.day_of_week);
+    
+    let totalExpectedClasses = 0;
+    for (let d = new Date(semesterStart); d <= today; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() === dayOfWeek) {
+        totalExpectedClasses++;
+      }
+    }
+    
+    const present = entries.filter(e => e.status === 'present').length;
+    const absent = entries.filter(e => e.status === 'absent').length;
+    const canceled = entries.filter(e => e.status === 'cancelled').length;
+    
+    // If no entry exists for expected classes, consider them absent
+    const totalMarked = present + absent + canceled;
+    const unmarkedClasses = Math.max(0, totalExpectedClasses - totalMarked);
+    const totalAbsent = absent + unmarkedClasses;
+    
+    const attendancePercentage = totalExpectedClasses > 0 ? 
+      Math.round((present / (present + totalAbsent || 1)) * 100) : 0;
+    
+    return { 
+      total: totalExpectedClasses, 
+      present, 
+      absent: totalAbsent, 
+      canceled, 
+      percentage: attendancePercentage 
+    };
+  };
+
+  const getAttendanceColorIndicator = (classItem) => {
+    const analytics = getAttendanceAnalytics(classItem);
+    
+    if (analytics.total === 0) return '#888';
+    if (analytics.percentage >= 80) return '#22c55e';
+    if (analytics.percentage >= 60) return '#f59e0b';
+    return '#ef4444';
   };
 
   const saveItem = async () => {
@@ -128,6 +348,7 @@ const AcademicsScreen = ({ route, navigation }) => {
       return;
     }
 
+    // Validation logic for different tabs
     if (activeTab === 'Timetable') {
       const required = ['course_name', 'start_time', 'end_time', 'teacher', 'room_number'];
       const missing = required.filter(field => !formData[field] || formData[field].trim() === '');
@@ -181,12 +402,11 @@ const AcademicsScreen = ({ route, navigation }) => {
         };
       }
 
-      let response;
       if (editingItem) {
-        response = await axios.put(endpoint, data);
+        await axios.put(endpoint, data);
         Alert.alert('Success', `${activeTab.slice(0, -1)} updated successfully`);
       } else {
-        response = await axios.post(endpoint, data);
+        await axios.post(endpoint, data);
         Alert.alert('Success', `${activeTab.slice(0, -1)} added successfully`);
       }
 
@@ -194,9 +414,15 @@ const AcademicsScreen = ({ route, navigation }) => {
       setEditingItem(null);
       setFormData({});
       
-      if (activeTab === 'Timetable') fetchTimetable();
-      else if (activeTab === 'Exams') fetchExams();
-      else if (activeTab === 'Grades') fetchGrades();
+      if (activeTab === 'Timetable') {
+        await fetchTimetable();
+        await fetchCourses();
+        await fetchCourseAttendance();
+      } else if (activeTab === 'Exams') {
+        await fetchExams();
+      } else if (activeTab === 'Grades') {
+        await fetchGrades();
+      }
       
     } catch (error) {
       console.error('Error saving item:', error);
@@ -232,9 +458,15 @@ const AcademicsScreen = ({ route, navigation }) => {
               await axios.delete(endpoint);
               Alert.alert('Success', `${activeTab.slice(0, -1)} deleted successfully`);
               
-              if (activeTab === 'Timetable') fetchTimetable();
-              else if (activeTab === 'Exams') fetchExams();
-              else if (activeTab === 'Grades') fetchGrades();
+              if (activeTab === 'Timetable') {
+                await fetchTimetable();
+                await fetchCourses();
+                await fetchCourseAttendance();
+              } else if (activeTab === 'Exams') {
+                await fetchExams();
+              } else if (activeTab === 'Grades') {
+                await fetchGrades();
+              }
               
             } catch (error) {
               console.error('Error deleting item:', error);
@@ -300,6 +532,39 @@ const AcademicsScreen = ({ route, navigation }) => {
     setModalVisible(true);
   };
 
+  const showAttendanceOptions = (classItem) => {
+    setSelectedClassForAttendance(classItem);
+    setSelectedDate(new Date().toISOString().split('T')[0]);
+    setShowAttendanceModal(true);
+  };
+
+  const showClassAnalytics = (classItem) => {
+    setSelectedClassForAttendance(classItem);
+    setShowAnalyticsModal(true);
+  };
+
+  // Enhanced time picker functions
+  const openTimePicker = (type) => {
+    setTimePickerType(type);
+    setShowTimePicker(true);
+  };
+
+  const handleTimeSelection = (time) => {
+    if (timePickerType === 'start') {
+      setFormData({...formData, start_time: time});
+    } else {
+      setFormData({...formData, end_time: time});
+    }
+    setShowTimePicker(false);
+  };
+
+  // Add date selection handler
+  const handleDateSelection = (date) => {
+    setFormData({...formData, date: date});
+    setShowCalendarPicker(false);
+  };
+
+  // Render functions
   const renderTimetableContent = () => (
     <View style={styles.contentContainer}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelector}>
@@ -325,32 +590,64 @@ const AcademicsScreen = ({ route, navigation }) => {
 
       <View style={styles.scheduleContainer}>
         {!loading && timetableData[selectedDay]?.length > 0 ? (
-          timetableData[selectedDay].map((classItem) => (
-            <TouchableOpacity
-              key={classItem.id}
-              style={styles.classCard}
-              onLongPress={() => deleteItem(classItem)}
-              onPress={() => openModal(classItem)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.timeIndicator}>
-                <Text style={styles.timeText}>{classItem.start_time}</Text>
-                <View style={styles.timeDivider} />
-                <Text style={styles.timeText}>{classItem.end_time}</Text>
-              </View>
-              <View style={styles.classDetails}>
-                <Text style={styles.className}>{classItem.course_name}</Text>
-                <View style={styles.classInfo}>
-                  <Ionicons name="person-outline" size={14} color="#888" />
-                  <Text style={styles.classInfoText}>{classItem.teacher}</Text>
+          timetableData[selectedDay].map((classItem) => {
+            const analytics = getAttendanceAnalytics(classItem);
+            const attendanceColor = getAttendanceColorIndicator(classItem);
+            
+            return (
+              <View key={classItem.id} style={styles.classCardContainer}>
+                <TouchableOpacity
+                  style={[styles.classCard, {borderLeftColor: attendanceColor}]}
+                  onLongPress={() => deleteItem(classItem)}
+                  onPress={() => openModal(classItem)}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.timeIndicator}>
+                    <Text style={styles.timeText}>{classItem.start_time}</Text>
+                    <View style={styles.timeDivider} />
+                    <Text style={styles.timeText}>{classItem.end_time}</Text>
+                  </View>
+                  <View style={styles.classDetails}>
+                    <Text style={styles.className}>{classItem.course_name}</Text>
+                    <View style={styles.classInfo}>
+                      <Ionicons name="person-outline" size={14} color="#888" />
+                      <Text style={styles.classInfoText}>{classItem.teacher}</Text>
+                    </View>
+                    <View style={styles.classInfo}>
+                      <Ionicons name="location-outline" size={14} color="#888" />
+                      <Text style={styles.classInfoText}>{classItem.room_number}</Text>
+                    </View>
+                    
+                    {analytics.total > 0 && (
+                      <View style={styles.attendancePreview}>
+                        <Text style={[styles.attendancePercentage, {color: attendanceColor}]}>
+                          {analytics.percentage}% Attendance
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </TouchableOpacity>
+                
+                <View style={styles.classCardActions}>
+                  <TouchableOpacity 
+                    style={styles.classActionButton}
+                    onPress={() => showAttendanceOptions(classItem)}
+                  >
+                    <Ionicons name="checkbox-outline" size={16} color="#3b82f6" />
+                    <Text style={styles.classActionText}>Attendance</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                    style={styles.classActionButton}
+                    onPress={() => showClassAnalytics(classItem)}
+                  >
+                    <Ionicons name="analytics-outline" size={16} color="#3b82f6" />
+                    <Text style={styles.classActionText}>Analytics</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.classInfo}>
-                  <Ionicons name="location-outline" size={14} color="#888" />
-                  <Text style={styles.classInfoText}>{classItem.room_number}</Text>
-                </View>
               </View>
-            </TouchableOpacity>
-          ))
+            );
+          })
         ) : !loading && (
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={64} color="#666" />
@@ -372,7 +669,7 @@ const AcademicsScreen = ({ route, navigation }) => {
     <View style={styles.contentContainer}>
       {loading && (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading exams...</Text>
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
       )}
 
@@ -388,13 +685,20 @@ const AcademicsScreen = ({ route, navigation }) => {
             <View style={styles.examHeader}>
               <Text style={styles.examName}>{exam.exam_name}</Text>
               <View style={styles.examBadge}>
-                <Ionicons name="calendar" size={12} color="#fff" />
+                <Ionicons name="school-outline" size={16} color="#fff" />
               </View>
             </View>
-            <Text style={styles.examDate}>{new Date(exam.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+            <Text style={styles.examDate}>
+              {new Date(exam.date).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </Text>
             <View style={styles.examInfo}>
               <Ionicons name="location-outline" size={14} color="#888" />
-              <Text style={styles.examRoom}>{exam.room_number}</Text>
+              <Text style={styles.examRoom}>Room: {exam.room_number}</Text>
             </View>
             {exam.additional_notes && (
               <Text style={styles.examNotes}>{exam.additional_notes}</Text>
@@ -421,7 +725,7 @@ const AcademicsScreen = ({ route, navigation }) => {
     <View style={styles.contentContainer}>
       {loading && (
         <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading grades...</Text>
+          <Text style={styles.loadingText}>Loading...</Text>
         </View>
       )}
 
@@ -429,15 +733,15 @@ const AcademicsScreen = ({ route, navigation }) => {
         <>
           <View style={styles.cgpaCard}>
             <View style={styles.cgpaHeader}>
-              <Ionicons name="trophy" size={32} color="#f59e0b" />
+              <Ionicons name="trophy-outline" size={32} color="#f59e0b" />
               <View style={styles.cgpaInfo}>
-                <Text style={styles.cgpaLabel}>CGPA</Text>
-                <Text style={styles.cgpaValue}>{cgpaInfo.cgpa || '0.00'}</Text>
+                <Text style={styles.cgpaLabel}>Current CGPA</Text>
+                <Text style={styles.cgpaValue}>{cgpaInfo.cgpa.toFixed(2)}</Text>
               </View>
             </View>
             <View style={styles.creditsInfo}>
-              <Text style={styles.creditsLabel}>Total Credits</Text>
-              <Text style={styles.creditsValue}>{cgpaInfo.total_credits || 0}</Text>
+              <Text style={styles.creditsLabel}>Total Credits Completed</Text>
+              <Text style={styles.creditsValue}>{cgpaInfo.total_credits}</Text>
             </View>
           </View>
 
@@ -457,12 +761,12 @@ const AcademicsScreen = ({ route, navigation }) => {
                   </View>
                 </View>
                 <View style={styles.gradeFooter}>
-                  <Text style={styles.semesterText}>{grade.semester}</Text>
+                  <Text style={styles.semesterText}>Semester {grade.semester}</Text>
                   <Text style={styles.creditsText}>{grade.credits} credits</Text>
                 </View>
               </TouchableOpacity>
             ))
-          ) : (
+          ) : !loading && (
             <View style={styles.emptyState}>
               <Ionicons name="school-outline" size={64} color="#666" />
               <Text style={styles.emptyStateText}>No grades recorded</Text>
@@ -480,22 +784,33 @@ const AcademicsScreen = ({ route, navigation }) => {
     </View>
   );
 
-  const renderModalContent = () => {
-    if (activeTab === 'Timetable') {
-      return (
-        <>
-          <View style={styles.pickerContainer}>
+  const renderModalContent = () => (
+    <View style={styles.modalContent}>
+      <View style={styles.modalHeader}>
+        <Text style={styles.modalTitle}>
+          {editingItem ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}
+        </Text>
+        <TouchableOpacity
+          onPress={() => setModalVisible(false)}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="close" size={24} color="#888" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
+        {activeTab === 'Timetable' && (
+          <>
             <Text style={styles.inputLabel}>Day</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.dayPickerScroll}>
               {days.map(day => (
                 <TouchableOpacity
                   key={day}
                   style={[
-                    styles.dayPickerButton, 
+                    styles.dayPickerButton,
                     formData.day_of_week === day && styles.selectedDayPickerButton
                   ]}
                   onPress={() => setFormData({...formData, day_of_week: day})}
-                  activeOpacity={0.8}
                 >
                   <Text style={[
                     styles.dayPickerText,
@@ -506,126 +821,479 @@ const AcademicsScreen = ({ route, navigation }) => {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            <Text style={styles.inputLabel}>Course Name</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.course_name}
+              onChangeText={(text) => setFormData({...formData, course_name: text})}
+              placeholder="Enter course name"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Start Time</Text>
+            <TouchableOpacity
+              style={styles.timePickerButton}
+              onPress={() => openTimePicker('start')}
+            >
+              <Text style={styles.timePickerButtonLabel}>Start Time</Text>
+              <View style={styles.timePickerButtonContent}>
+                <Text style={styles.timePickerButtonText}>
+                  {formData.start_time || 'Select start time'}
+                </Text>
+                <Ionicons name="time-outline" size={20} color="#888" />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>End Time</Text>
+            <TouchableOpacity
+              style={styles.timePickerButton}
+              onPress={() => openTimePicker('end')}
+            >
+              <Text style={styles.timePickerButtonLabel}>End Time</Text>
+              <View style={styles.timePickerButtonContent}>
+                <Text style={styles.timePickerButtonText}>
+                  {formData.end_time || 'Select end time'}
+                </Text>
+                <Ionicons name="time-outline" size={20} color="#888" />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Teacher</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.teacher}
+              onChangeText={(text) => setFormData({...formData, teacher: text})}
+              placeholder="Enter teacher name"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Room Number</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.room_number}
+              onChangeText={(text) => setFormData({...formData, room_number: text})}
+              placeholder="Enter room number"
+              placeholderTextColor="#666"
+            />
+          </>
+        )}
+
+        {activeTab === 'Exams' && (
+          <>
+            <Text style={styles.inputLabel}>Exam Name</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.exam_name}
+              onChangeText={(text) => setFormData({...formData, exam_name: text})}
+              placeholder="Enter exam name"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Date</Text>
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => setShowCalendarPicker(true)}
+            >
+              <Text style={styles.datePickerButtonLabel}>Exam Date</Text>
+              <View style={styles.datePickerButtonContent}>
+                <Text style={styles.datePickerButtonText}>
+                  {formData.date ? new Date(formData.date).toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) : 'Select exam date'}
+                </Text>
+                <Ionicons name="calendar-outline" size={20} color="#888" />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={styles.inputLabel}>Room Number</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.room_number}
+              onChangeText={(text) => setFormData({...formData, room_number: text})}
+              placeholder="Enter room number"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Additional Notes (Optional)</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={formData.additional_notes}
+              onChangeText={(text) => setFormData({...formData, additional_notes: text})}
+              placeholder="Enter any additional notes"
+              placeholderTextColor="#666"
+              multiline
+            />
+          </>
+        )}
+
+        {activeTab === 'Grades' && (
+          <>
+            <Text style={styles.inputLabel}>Course Name</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.course_name}
+              onChangeText={(text) => setFormData({...formData, course_name: text})}
+              placeholder="Enter course name"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Credits</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.credits}
+              onChangeText={(text) => setFormData({...formData, credits: text})}
+              placeholder="Enter credits"
+              placeholderTextColor="#666"
+              keyboardType="numeric"
+            />
+
+            <Text style={styles.inputLabel}>Grade</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.grade}
+              onChangeText={(text) => setFormData({...formData, grade: text})}
+              placeholder="Enter grade (A+, A, B+, etc.)"
+              placeholderTextColor="#666"
+            />
+
+            <Text style={styles.inputLabel}>Semester</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.semester}
+              onChangeText={(text) => setFormData({...formData, semester: text})}
+              placeholder="Enter semester"
+              placeholderTextColor="#666"
+              keyboardType="numeric"
+            />
+          </>
+        )}
+      </ScrollView>
+
+      <View style={styles.modalButtons}>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.cancelButton]}
+          onPress={() => setModalVisible(false)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.cancelButtonText}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.modalButton, styles.saveButton]}
+          onPress={saveItem}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.saveButtonText}>
+            {editingItem ? 'Update' : 'Save'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderAttendanceModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={showAttendanceModal}
+      onRequestClose={() => setShowAttendanceModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.attendanceModalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Mark Attendance</Text>
+            <TouchableOpacity
+              onPress={() => setShowAttendanceModal(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={24} color="#888" />
+            </TouchableOpacity>
           </View>
-          <TextInput
-            style={styles.input}
-            placeholder="Course Name"
-            placeholderTextColor="#666"
-            value={formData.course_name}
-            onChangeText={(text) => setFormData({...formData, course_name: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Start Time (e.g., 9:00 AM)"
-            placeholderTextColor="#666"
-            value={formData.start_time}
-            onChangeText={(text) => setFormData({...formData, start_time: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="End Time (e.g., 10:00 AM)"
-            placeholderTextColor="#666"
-            value={formData.end_time}
-            onChangeText={(text) => setFormData({...formData, end_time: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Teacher"
-            placeholderTextColor="#666"
-            value={formData.teacher}
-            onChangeText={(text) => setFormData({...formData, teacher: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Room Number"
-            placeholderTextColor="#666"
-            value={formData.room_number}
-            onChangeText={(text) => setFormData({...formData, room_number: text})}
-          />
-        </>
-      );
-    } else if (activeTab === 'Exams') {
-      return (
-        <>
-          <TextInput
-            style={styles.input}
-            placeholder="Exam Name"
-            placeholderTextColor="#666"
-            value={formData.exam_name}
-            onChangeText={(text) => setFormData({...formData, exam_name: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Date (YYYY-MM-DD)"
-            placeholderTextColor="#666"
-            value={formData.date}
-            onChangeText={(text) => setFormData({...formData, date: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Room Number"
-            placeholderTextColor="#666"
-            value={formData.room_number}
-            onChangeText={(text) => setFormData({...formData, room_number: text})}
-          />
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder="Additional Notes"
-            placeholderTextColor="#666"
-            value={formData.additional_notes}
-            onChangeText={(text) => setFormData({...formData, additional_notes: text})}
-            multiline
-            numberOfLines={4}
-          />
-        </>
-      );
-    } else if (activeTab === 'Grades') {
-      return (
-        <>
-          <TextInput
-            style={styles.input}
-            placeholder="Course Name"
-            placeholderTextColor="#666"
-            value={formData.course_name}
-            onChangeText={(text) => setFormData({...formData, course_name: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Credits"
-            placeholderTextColor="#666"
-            value={formData.credits}
-            keyboardType="numeric"
-            onChangeText={(text) => setFormData({...formData, credits: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Grade (e.g., A, B+, C)"
-            placeholderTextColor="#666"
-            value={formData.grade}
-            onChangeText={(text) => setFormData({...formData, grade: text})}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Semester (e.g., Fall 2024)"
-            placeholderTextColor="#666"
-            value={formData.semester}
-            onChangeText={(text) => setFormData({...formData, semester: text})}
-          />
-        </>
-      );
-    }
+
+          {selectedClassForAttendance && (
+            <View style={styles.attendanceClassInfo}>
+              <Text style={styles.attendanceClassName}>
+                {selectedClassForAttendance.course_name}
+              </Text>
+              <Text style={styles.attendanceClassDetail}>
+                Teacher: {selectedClassForAttendance.teacher}
+              </Text>
+              <Text style={styles.attendanceClassDetail}>
+                Room: {selectedClassForAttendance.room_number}
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.dateSelector}>
+            <Ionicons name="calendar-outline" size={20} color="#888" />
+            <TouchableOpacity
+              style={{ flex: 1 }}
+              onPress={() => setShowDatePicker(true)}
+            >
+              <Text style={styles.dateSelectorText}>
+                {new Date(selectedDate).toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
+            <Ionicons name="chevron-down" size={20} color="#888" />
+          </View>
+
+          <View style={styles.attendanceOptions}>
+            {[
+              { status: 'present', icon: 'checkmark-circle-outline', label: 'Present', color: '#22c55e' },
+              { status: 'absent', icon: 'close-circle-outline', label: 'Absent', color: '#ef4444' },
+              { status: 'cancelled', icon: 'ban-outline', label: 'Cancelled', color: '#f59e0b' }
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.status}
+                style={[
+                  styles.attendanceOption,
+                  attendanceStatus === option.status && styles.selectedAttendanceOption
+                ]}
+                onPress={() => setAttendanceStatus(option.status)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name={option.icon} size={24} color={option.color} />
+                <View style={styles.attendanceOptionTextContainer}>
+                  <Text style={styles.attendanceOptionText}>{option.label}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity
+            style={styles.markAttendanceButton}
+            onPress={() => markAttendance(attendanceStatus)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.markAttendanceButtonText}>
+              Mark as {attendanceStatus.charAt(0).toUpperCase() + attendanceStatus.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderAnalyticsModal = () => (
+    <Modal
+      animationType="slide"
+      transparent={true}
+      visible={showAnalyticsModal}
+      onRequestClose={() => setShowAnalyticsModal(false)}
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.analyticsModalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Attendance Analytics</Text>
+            <TouchableOpacity
+              onPress={() => setShowAnalyticsModal(false)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={24} color="#888" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.analyticsScrollView} showsVerticalScrollIndicator={false}>
+            {selectedClassForAttendance && (
+              <>
+                <View style={styles.analyticsHeader}>
+                  <Text style={styles.analyticsSubtitle}>
+                    {selectedClassForAttendance.course_name}
+                  </Text>
+                  <Text style={styles.analyticsInfo}>
+                    {selectedClassForAttendance.teacher} • {selectedClassForAttendance.room_number}
+                  </Text>
+                </View>
+
+                {(() => {
+                  const analytics = getAttendanceAnalytics(selectedClassForAttendance);
+                  
+                  if (analytics.total === 0) {
+                    return (
+                      <View style={styles.noDataContainer}>
+                        <Ionicons name="bar-chart-outline" size={64} color="#666" />
+                        <Text style={styles.noDataText}>No attendance data yet</Text>
+                        <Text style={styles.noDataSubtext}>
+                          Start marking attendance to see analytics
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <View style={styles.attendanceOverview}>
+                        <View style={styles.attendanceStatCard}>
+                          <Text style={styles.attendanceStatValue}>{analytics.present}</Text>
+                          <Text style={styles.attendanceStatLabel}>Present</Text>
+                        </View>
+                        <View style={styles.attendanceStatCard}>
+                          <Text style={[styles.attendanceStatValue, { color: '#ef4444' }]}>
+                            {analytics.absent}
+                          </Text>
+                          <Text style={styles.attendanceStatLabel}>Absent</Text>
+                        </View>
+                        <View style={styles.attendanceStatCard}>
+                          <Text style={[styles.attendanceStatValue, { color: '#f59e0b' }]}>
+                            {analytics.canceled}
+                          </Text>
+                          <Text style={styles.attendanceStatLabel}>Cancelled</Text>
+                        </View>
+                        <View style={styles.attendanceStatCard}>
+                          <Text style={[styles.attendanceStatValue, { color: '#22c55e' }]}>
+                            {analytics.percentage}%
+                          </Text>
+                          <Text style={styles.attendanceStatLabel}>Attendance</Text>
+                        </View>
+                      </View>
+
+                      <View style={styles.pieChartContainer}>
+                        <Text style={styles.chartTitle}>Attendance Distribution</Text>
+                        <PieChart
+                          data={[
+                            {
+                              name: 'Present',
+                              population: analytics.present,
+                              color: '#22c55e',
+                              legendFontColor: '#888',
+                              legendFontSize: 12,
+                            },
+                            {
+                              name: 'Absent',
+                              population: analytics.absent,
+                              color: '#ef4444',
+                              legendFontColor: '#888',
+                              legendFontSize: 12,
+                            },
+                            {
+                              name: 'Cancelled',
+                              population: analytics.canceled,
+                              color: '#f59e0b',
+                              legendFontColor: '#888',
+                              legendFontSize: 12,
+                            },
+                          ]}
+                          width={width - 80}
+                          height={200}
+                          chartConfig={{
+                            backgroundColor: '#1a1a1a',
+                            backgroundGradientFrom: '#1a1a1a',
+                            backgroundGradientTo: '#1a1a1a',
+                            color: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
+                          }}
+                          accessor="population"
+                          backgroundColor="transparent"
+                          paddingLeft="15"
+                        />
+                      </View>
+
+                      <View style={styles.historyContainer}>
+                        <Text style={styles.historyTitle}>Recent History</Text>
+                        {attendanceData[selectedClassForAttendance.id]?.length > 0 ? (
+                          attendanceData[selectedClassForAttendance.id]
+                            .slice(-10)
+                            .reverse()
+                            .map((entry, index) => (
+                              <View key={index} style={styles.historyItem}>
+                                <View
+                                  style={[
+                                    styles.historyStatusIndicator,
+                                    {
+                                      backgroundColor:
+                                        entry.status === 'present'
+                                          ? '#22c55e'
+                                          : entry.status === 'absent'
+                                          ? '#ef4444'
+                                          : '#f59e0b',
+                                    },
+                                  ]}
+                                />
+                                <Text style={styles.historyDate}>
+                                  {new Date(entry.date).toLocaleDateString()}
+                                </Text>
+                                <Text style={styles.historyStatus}>
+                                  {entry.status.charAt(0).toUpperCase() + entry.status.slice(1)}
+                                </Text>
+                              </View>
+                            ))
+                        ) : (
+                          <Text style={styles.noHistoryText}>No attendance history available</Text>
+                        )}
+                      </View>
+                    </>
+                  );
+                })()}
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const renderDatePicker = () => {
+    if (!showDatePicker) return null;
+    
+    return (
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={showDatePicker}
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.datePickerContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Date</Text>
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(false)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="close" size={24} color="#888" />
+              </TouchableOpacity>
+            </View>
+            
+            <DateTimePicker
+              value={new Date(selectedDate)}
+              mode="date"
+              display="spinner"
+              onChange={(event, date) => {
+                if (date) {
+                  setSelectedDate(date.toISOString().split('T')[0]);
+                }
+                setShowDatePicker(Platform.OS === 'ios');
+              }}
+              style={{ backgroundColor: '#1a1a1a' }}
+            />
+            
+            <TouchableOpacity
+              style={styles.datePickerButton}
+              onPress={() => {
+                setSelectedDate(new Date().toISOString().split('T')[0]);
+                setShowDatePicker(false);
+              }}
+            >
+              <Text style={styles.datePickerButtonText}>Use Today</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
   };
 
   if (!currentUserId) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.errorContainer}>
-          <Ionicons name="warning-outline" size={64} color="#ef4444" />
-          <Text style={styles.errorTitle}>User ID Not Available</Text>
+          <Ionicons name="alert-circle-outline" size={64} color="#ef4444" />
+          <Text style={styles.errorTitle}>User Not Found</Text>
           <Text style={styles.errorMessage}>
-            Please make sure you're properly logged in and try again.
+            Unable to load user information. Please try logging in again.
           </Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.retryButton}
             onPress={() => navigation.goBack()}
             activeOpacity={0.8}
@@ -678,62 +1346,43 @@ const AcademicsScreen = ({ route, navigation }) => {
         <View style={styles.bottomSpace} />
       </ScrollView>
 
-      {/* Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingItem ? 'Edit' : 'Add'} {activeTab.slice(0, -1)}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  setEditingItem(null);
-                  setFormData({});
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="close" size={24} color="#888" />
-              </TouchableOpacity>
-            </View>
-            
-            <ScrollView style={styles.modalScrollView} showsVerticalScrollIndicator={false}>
-              {renderModalContent()}
-            </ScrollView>
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.cancelButton]}
-                onPress={() => {
-                  setModalVisible(false);
-                  setEditingItem(null);
-                  setFormData({});
-                }}
-                disabled={loading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.cancelButtonText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.saveButton]}
-                onPress={saveItem}
-                disabled={loading}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.saveButtonText}>
-                  {loading ? 'Saving...' : 'Save'}
-                </Text>
-              </TouchableOpacity>
-            </View>
+      {/* Modals */}
+      {modalVisible && (
+        <Modal
+          animationType="slide"
+          transparent={true}
+          visible={modalVisible}
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            {renderModalContent()}
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
+
+      {renderDatePicker()}
+      {renderAttendanceModal()}
+      {renderAnalyticsModal()}
+      
+      {/* Enhanced Time Picker */}
+      <ClockTimePicker 
+        visible={showTimePicker} 
+        onClose={() => setShowTimePicker(false)} 
+        initialTime={
+          timePickerType === 'start' 
+            ? formData.start_time 
+            : formData.end_time
+        } 
+        onSelectTime={handleTimeSelection}
+      />
+
+      {/* Calendar Picker */}
+      <CalendarPicker 
+        visible={showCalendarPicker} 
+        onClose={() => setShowCalendarPicker(false)} 
+        initialDate={formData.date} 
+        onSelectDate={handleDateSelection}
+      />
     </SafeAreaView>
   );
 };
@@ -866,7 +1515,10 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   scheduleContainer: {
-    gap: 12,
+    gap: 16,
+  },
+  classCardContainer: {
+    marginBottom: 16,
   },
   classCard: {
     backgroundColor: '#1a1a1a',
@@ -912,6 +1564,40 @@ const styles = StyleSheet.create({
   classInfoText: {
     fontSize: 13,
     color: '#888',
+  },
+  attendancePreview: {
+    marginTop: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#2a2a2a',
+  },
+  attendancePercentage: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  classCardActions: {
+    flexDirection: 'row',
+    marginTop: 8,
+    justifyContent: 'space-between',
+  },
+  classActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flex: 1,
+    justifyContent: 'center',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  classActionText: {
+    color: '#888',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   examCard: {
     backgroundColor: '#1a1a1a',
@@ -1131,11 +1817,9 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
-  pickerContainer: {
-    marginBottom: 12,
-  },
   dayPickerScroll: {
     flexDirection: 'row',
+    marginBottom: 16,
   },
   dayPickerButton: {
     backgroundColor: '#0a0a0a',
@@ -1156,6 +1840,60 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   selectedDayPickerText: {
+    color: '#fff',
+  },
+  timePickerButton: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  timePickerButtonLabel: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '500',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  timePickerButtonContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  timePickerButtonText: {
+    fontSize: 15,
+    color: '#fff',
+  },
+  datePickerButton: {
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  datePickerButtonLabel: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '500',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  datePickerButtonContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+  },
+  datePickerButtonText: {
+    fontSize: 15,
     color: '#fff',
   },
   modalButtons: {
@@ -1186,6 +1924,213 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 15,
+  },
+  attendanceModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  attendanceClassInfo: {
+    marginBottom: 24,
+    padding: 16,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#3b82f6',
+  },
+  attendanceClassName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  attendanceClassDetail: {
+    fontSize: 14,
+    color: '#888',
+    marginBottom: 4,
+  },
+  attendanceOptions: {
+    marginBottom: 24,
+  },
+  attendanceOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  selectedAttendanceOption: {
+    borderColor: '#3b82f6',
+    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+  },
+  attendanceOptionTextContainer: {
+    marginLeft: 12,
+  },
+  attendanceOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  markAttendanceButton: {
+    backgroundColor: '#3b82f6',
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  markAttendanceButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  analyticsModalContent: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  analyticsScrollView: {
+    maxHeight: 500,
+  },
+  analyticsHeader: {
+    marginBottom: 20,
+  },
+  analyticsSubtitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 8,
+  },
+  analyticsInfo: {
+    fontSize: 14,
+    color: '#888',
+  },
+  attendanceOverview: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  attendanceStatCard: {
+    flex: 1,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  attendanceStatValue: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#3b82f6',
+    marginBottom: 4,
+  },
+  attendanceStatLabel: {
+    fontSize: 12,
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  pieChartContainer: {
+    marginBottom: 24,
+    backgroundColor: '#0a0a0a',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 16,
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#888',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  noDataSubtext: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+  historyContainer: {
+    marginBottom: 24,
+  },
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginBottom: 16,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+  },
+  historyStatusIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 12,
+  },
+  historyDate: {
+    flex: 1,
+    fontSize: 14,
+    color: '#fff',
+  },
+  historyStatus: {
+    fontSize: 14,
+    color: '#888',
+    fontWeight: '600',
+  },
+  noHistoryText: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: 20,
+  },
+  datePickerContainer: {
+    backgroundColor: '#1a1a1a',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+  },
+  dateSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0a0a0a',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 24,
+    justifyContent: 'space-between',
+  },
+  dateSelectorText: {
+    color: '#fff',
+    fontSize: 14,
+    flex: 1,
+    marginLeft: 8,
   },
 });
 
