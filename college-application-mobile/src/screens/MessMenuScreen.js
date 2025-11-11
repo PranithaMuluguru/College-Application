@@ -14,7 +14,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 
-const API_URL = 'http://10.32.9.170:8000';
+import API_URL from '../config';
+const API_BASE_URL = API_URL;
 
 const MessMenuScreen = ({ navigation }) => {
   const [selectedView, setSelectedView] = useState('today');

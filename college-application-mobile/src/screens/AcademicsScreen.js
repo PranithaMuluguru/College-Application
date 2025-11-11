@@ -20,8 +20,9 @@ import * as Notifications from 'expo-notifications';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ClockTimePicker from './ClockTimePicker';
 import CalendarPicker from './CalendarPicker'; // Import the calendar picker
+import API_URL from '../config';
+const API_BASE_URL = API_URL;
 
-const API_URL = 'http://10.32.9.170:8000';
 const { width } = Dimensions.get('window');
 
 // Configure notifications

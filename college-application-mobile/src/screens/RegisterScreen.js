@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import axios from 'axios';
 
-const API_BASE_URL = 'http://10.32.9.170:8000'; // Change to your server IP
+import API_URL from '../config';
+const API_BASE_URL = API_URL;
 
 const RegisterScreen = ({ navigation }) => {
   const [formData, setFormData] = useState({
@@ -30,26 +31,40 @@ const RegisterScreen = ({ navigation }) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleRegister = async () => {
-    for (const key in formData) {
-      if (!formData[key]) {
-        Alert.alert('Error', 'Please fill all fields');
-        return;
-      }
+const handleRegister = async () => {
+  for (const key in formData) {
+    if (!formData[key]) {
+      Alert.alert('Error', 'Please fill all fields');
+      return;
     }
+  }
 
-    setIsLoading(true);
-    try {
-      const response = await axios.post(`${API_BASE_URL}/register/`, formData);
-      Alert.alert('Success', response.data.message);
-      navigation.navigate('VerifyOTP', { email: formData.email });
-    } catch (error) {
-      console.error('Registration error:', error.response?.data);
-      Alert.alert('Error', error.response?.data?.detail || 'Registration failed');
-    } finally {
-      setIsLoading(false);
-    }
+  // Prepare payload with correct types
+  const payload = {
+    email: formData.email.trim(),
+    password: formData.password,
+    full_name: formData.full_name.trim(),
+    college_id: formData.college_id.trim(),
+    department: formData.department.trim(),
+    year: parseInt(formData.year, 10), // Convert string to integer
+    phone_number: formData.phone_number.trim(),
   };
+
+  console.log('Sending registration data:', payload);
+
+  setIsLoading(true);
+  try {
+    const response = await axios.post(`${API_BASE_URL}/register/`, payload);
+    Alert.alert('Success', response.data.message);
+    navigation.navigate('VerifyOTP', { email: formData.email });
+  } catch (error) {
+    console.error('Registration error:', error.response?.data);
+    const errorMsg = error.response?.data?.detail || 'Registration failed';
+    Alert.alert('Error', typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   return (
     <KeyboardAvoidingView

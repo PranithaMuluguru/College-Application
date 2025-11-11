@@ -14,7 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import FloatingAI from './FloatingAI';
 
-const API_URL = 'http://10.32.9.170:8000';
+import API_URL from '../config';
 
 const HomeScreen = ({ navigation, route }) => {
   const userData = route.params?.user || {};
@@ -277,7 +277,7 @@ const HomeScreen = ({ navigation, route }) => {
     { 
       name: 'Chat', 
       icon: 'chatbubble-outline',
-      onPress: navigateToMessMenu 
+      onPress: () => navigation.navigate('ChatList', { userId, userInfo }) // Changed from MessMenu
     },
     { 
       name: 'Profile', 

@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum as SQLAlchemyEnum,
     Date,
     ForeignKey,
+    UniqueConstraint,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -80,6 +81,28 @@ class User(Base):
     attendance_records = relationship("AttendanceRecord", back_populates="user")
     timetable_entries = relationship("TimetableEntry", back_populates="user")
     courses = relationship("Course", back_populates="user", cascade="all, delete-orphan")
+
+
+    # Social relationships
+    following = relationship("Follow", foreign_keys="Follow.follower_id", back_populates="follower")
+    followers = relationship("Follow", foreign_keys="Follow.following_id", back_populates="following")
+    
+    # Chat relationships
+    created_groups = relationship("ChatGroup", back_populates="creator")
+    group_memberships = relationship("GroupMember", back_populates="user")
+    sent_messages = relationship("ChatMessage", back_populates="sender")
+    
+    # Feed relationships
+    posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
+    comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
+    likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
+    
+    # Discussion relationships
+    discussions = relationship("Discussion", back_populates="author", cascade="all, delete-orphan")
+    discussion_replies = relationship("DiscussionReply", back_populates="author", cascade="all, delete-orphan")
+    
+    # Notifications
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 class Course(Base):
     __tablename__ = "courses"
@@ -271,3 +294,209 @@ class AttendanceRecord(Base):
     # Relationships
     user = relationship("User", back_populates="attendance_records")
     timetable_entry = relationship("TimetableEntry", back_populates="attendance_records")
+
+# Add these new enums
+class FollowStatus(enum.Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+class NotificationType(enum.Enum):
+    FOLLOW_REQUEST = "follow_request"
+    FOLLOW_ACCEPTED = "follow_accepted"
+    NEW_MESSAGE = "new_message"
+    GROUP_ADDED = "group_added"
+    POST_LIKE = "post_like"
+    POST_COMMENT = "post_comment"
+    POST_MENTION = "post_mention"
+    DISCUSSION_REPLY = "discussion_reply"
+    EVENT_REMINDER = "event_reminder"
+    ADMIN_BROADCAST = "admin_broadcast"
+
+class DiscussionVisibility(enum.Enum):
+    PUBLIC = "public"
+    RESTRICTED = "restricted"
+
+class ChatType(enum.Enum):
+    DIRECT = "direct"
+    GROUP = "group"
+
+# New Models
+
+class Follow(Base):
+    __tablename__ = "follows"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    following_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    status = Column(SQLAlchemyEnum(FollowStatus), default=FollowStatus.PENDING)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    follower = relationship("User", foreign_keys=[follower_id], back_populates="following")
+    following = relationship("User", foreign_keys=[following_id], back_populates="followers")
+
+class ChatGroup(Base):
+    __tablename__ = "chat_groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    chat_type = Column(SQLAlchemyEnum(ChatType), default=ChatType.GROUP)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    avatar_url = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    creator = relationship("User", back_populates="created_groups")
+    members = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    messages = relationship("ChatMessage", back_populates="group", cascade="all, delete-orphan")
+
+class GroupMember(Base):
+    __tablename__ = "group_members"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("chat_groups.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    role = Column(String, default="member")  # member, admin
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    group = relationship("ChatGroup", back_populates="members")
+    user = relationship("User", back_populates="group_memberships")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("chat_groups.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    message = Column(Text, nullable=False)
+    message_type = Column(String, default="text")  # text, image, video, file
+    media_url = Column(String, nullable=True)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    group = relationship("ChatGroup", back_populates="messages")
+    sender = relationship("User", back_populates="sent_messages")
+
+class Post(Base):
+    __tablename__ = "posts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    media_url = Column(String, nullable=True)
+    media_type = Column(String, nullable=True)  # image, video
+    is_announcement = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    author = relationship("User", back_populates="posts")
+    comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan",passive_deletes=True)
+    likes = relationship("Like", back_populates="post", cascade="all, delete-orphan",passive_deletes=True)
+
+class Comment(Base):
+    __tablename__ = "comments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id",ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    post = relationship("Post", back_populates="comments")
+    author = relationship("User", back_populates="comments")
+
+class Like(Base):
+    __tablename__ = "likes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    post_id = Column(Integer, ForeignKey("posts.id",ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    post = relationship("Post", back_populates="likes")
+    user = relationship("User", back_populates="likes")
+
+class Discussion(Base):
+    __tablename__ = "discussions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    title = Column(String, nullable=False)
+    topic = Column(String, nullable=False)  # hashtag
+    content = Column(Text, nullable=False)
+    visibility = Column(SQLAlchemyEnum(DiscussionVisibility), default=DiscussionVisibility.PUBLIC)
+    allowed_departments = Column(String, nullable=True)  # comma-separated
+    allowed_years = Column(String, nullable=True)  # comma-separated
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    author = relationship("User", back_populates="discussions")
+    replies = relationship("DiscussionReply", back_populates="discussion", cascade="all, delete-orphan")
+
+class DiscussionReply(Base):
+    __tablename__ = "discussion_replies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    discussion_id = Column(Integer, ForeignKey("discussions.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    parent_reply_id = Column(Integer, ForeignKey("discussion_replies.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    discussion = relationship("Discussion", back_populates="replies")
+    author = relationship("User", back_populates="discussion_replies")
+    parent = relationship("DiscussionReply", remote_side=[id], backref="child_replies")
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    type = Column(SQLAlchemyEnum(NotificationType), nullable=False)
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    related_id = Column(Integer, nullable=True)  # ID of related post/message/event
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="notifications")
+class DiscussionParticipant(Base):
+    __tablename__ = "discussion_participants"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    discussion_id = Column(Integer, ForeignKey("discussions.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    is_admin = Column(Boolean, default=False)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('discussion_id', 'user_id', name='unique_participant'),
+    )
+
+# Update User model with new relationships
+# Add these to your existing User class:
+"""
+    # Social relationships
+    following = relationship("Follow", foreign_keys="Follow.follower_id", back_populates="follower")
+    followers = relationship("Follow", foreign_keys="Follow.following_id", back_populates="following")
+    
+    # Chat relationships
+    created_groups = relationship("ChatGroup", back_populates="creator")
+    group_memberships = relationship("GroupMember", back_populates="user")
+    sent_messages = relationship("ChatMessage", back_populates="sender")
+    
+    # Feed relationships
+    posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")
+    comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")
+    likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")
+    
+    # Discussion relationships
+    discussions = relationship("Discussion", back_populates="author", cascade="all, delete-orphan")
+    discussion_replies = relationship("DiscussionReply", back_populates="author", cascade="all, delete-orphan")
+    
+    # Notifications
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+"""

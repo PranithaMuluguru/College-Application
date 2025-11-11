@@ -1,9 +1,10 @@
+import logging
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr,validator
 from datetime import datetime, timedelta, date
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, text, func
+from sqlalchemy import or_, text, func,and_
 from typing import Optional, List
 from enum import Enum
 import random
@@ -17,10 +18,18 @@ from newapp import models
 from newapp.ai_service import AIAssistant
 from newapp.web_scraper import scrape_iitpkd_website
 
+
+logging.basicConfig(level=logging.INFO)
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="College App API", version="1.0.0")
+@app.on_event("startup")
+def create_tables():
+    """Create all tables if they don't exist"""
+    models.Base.metadata.create_all(bind=engine)
+    print("✅ All database tables created/verified")
 
 # CORS middleware
 app.add_middleware(
@@ -77,6 +86,11 @@ class UserCreate(BaseModel):
     department: str
     year: int
     phone_number: str
+    @validator('year')
+    def validate_year(cls, v):
+        if v < 1 or v > 5:  # Adjust range as needed
+            raise ValueError('Year must be between 1 and 5')
+        return v
 
 class UserLogin(BaseModel):
     identifier: str
@@ -781,6 +795,7 @@ def populate_mess_menu_data(db: Session):
 # ================ AUTH ENDPOINTS ================
 @app.post("/register/", response_model=dict)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
+    print(f"Received registration data: {user.dict()}")  # Add this line
     # Check if user already exists
     db_user = db.query(models.User).filter(
         or_(
@@ -2472,6 +2487,1875 @@ async def startup_event():
         print(f"Error during startup: {e}")
     finally:
         db.close()
+# ================ PYDANTIC MODELS ================
+
+class FollowRequest(BaseModel):
+    following_id: int
+
+class FollowResponse(BaseModel):
+    id: int
+    follower_id: int
+    following_id: int
+    status: str
+
+class ChatGroupCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    member_ids: List[int]
+
+class ChatMessageCreate(BaseModel):
+    message: str
+    message_type: Optional[str] = "text"
+    media_url: Optional[str] = None
+
+class PostCreate(BaseModel):
+    content: str
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+    is_announcement: Optional[bool] = False
+
+class CommentCreate(BaseModel):
+    content: str
+
+class DiscussionCreate(BaseModel):
+    title: str
+    topic: str
+    content: str
+    visibility: Optional[str] = "public"
+    allowed_departments: Optional[str] = None
+    allowed_years: Optional[str] = None
+
+class DiscussionReplyCreate(BaseModel):
+    content: str
+    parent_reply_id: Optional[int] = None
+
+# ================ FOLLOW ENDPOINTS ================
+
+# ================ FOLLOW ENDPOINTS ================
+
+@app.post("/follow/{user_id}")
+async def send_follow_request(
+    user_id: int,
+    follow: FollowRequest,
+    db: Session = Depends(get_db)
+):
+    """Send a follow request"""
+    try:
+        print(f"Follow request from {user_id} to {follow.following_id}")
+        
+        # Check if already following
+        existing = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.following_id == follow.following_id
+        ).first()
+        
+        if existing:
+            print(f"Existing follow found with status: {existing.status}")
+            if existing.status == models.FollowStatus.ACCEPTED:
+                return {"message": "Already following", "status": "accepted"}
+            else:
+                return {"message": "Follow request already sent", "status": "pending"}
+        
+        # Get follower info for notification
+        follower = db.query(models.User).filter(models.User.id == user_id).first()
+        print(f"Follower found: {follower.full_name}")
+        
+        # Create follow request
+        new_follow = models.Follow(
+            follower_id=user_id,
+            following_id=follow.following_id,
+            status=models.FollowStatus.PENDING
+        )
+        db.add(new_follow)
+        
+        # Create notification
+        notification = models.Notification(
+            user_id=follow.following_id,
+            type=models.NotificationType.FOLLOW_REQUEST,
+            title="New Follow Request",
+            message=f"{follower.full_name} wants to follow you",
+            related_id=user_id
+        )
+        db.add(notification)
+        print(f"Notification created for user {follow.following_id}")
+        
+        db.commit()
+        db.refresh(new_follow)
+        
+        print("Follow request and notification committed successfully")
+        
+        return {
+            "id": new_follow.id,
+            "follower_id": new_follow.follower_id,
+            "following_id": new_follow.following_id,
+            "status": new_follow.status.value,
+            "message": "Follow request sent"
+        }
+    except Exception as e:
+        print(f"Follow request error: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/follow/{user_id}/accept/{follower_id}")
+async def accept_follow_request(
+    user_id: int,
+    follower_id: int,
+    db: Session = Depends(get_db)
+):
+    """Accept a follow request and create mutual follow"""
+    try:
+        # Find the follow request
+        follow = db.query(models.Follow).filter(
+            models.Follow.follower_id == follower_id,
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.PENDING
+        ).first()
+        
+        if not follow:
+            raise HTTPException(status_code=404, detail="Follow request not found")
+        
+        # Accept the request
+        follow.status = models.FollowStatus.ACCEPTED
+        
+        # Create mutual follow (follow back automatically)
+        mutual_follow = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.following_id == follower_id
+        ).first()
+        
+        if not mutual_follow:
+            mutual_follow = models.Follow(
+                follower_id=user_id,
+                following_id=follower_id,
+                status=models.FollowStatus.ACCEPTED
+            )
+            db.add(mutual_follow)
+        else:
+            mutual_follow.status = models.FollowStatus.ACCEPTED
+        
+        # Get accepting user info
+        accepting_user = db.query(models.User).filter(
+            models.User.id == user_id
+        ).first()
+        
+        # Create notification for original requester
+        notification = models.Notification(
+            user_id=follower_id,
+            type=models.NotificationType.FOLLOW_ACCEPTED,
+            title="Follow Request Accepted",
+            message=f"{accepting_user.full_name} accepted your follow request. You can now chat!",
+            related_id=user_id
+        )
+        db.add(notification)
+        
+        # Mark the follow request notification as read
+        old_notification = db.query(models.Notification).filter(
+            models.Notification.user_id == user_id,
+            models.Notification.type == models.NotificationType.FOLLOW_REQUEST,
+            models.Notification.related_id == follower_id,
+            models.Notification.is_read == False
+        ).first()
+        if old_notification:
+            old_notification.is_read = True
+        
+        db.commit()
+        
+        return {
+            "message": "Follow request accepted. You both can now chat!",
+            "status": "accepted"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Accept follow error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/follow/{user_id}/reject/{follower_id}")
+async def reject_follow_request(
+    user_id: int,
+    follower_id: int,
+    db: Session = Depends(get_db)
+):
+    """Reject a follow request"""
+    try:
+        follow = db.query(models.Follow).filter(
+            models.Follow.follower_id == follower_id,
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.PENDING
+        ).first()
+        
+        if not follow:
+            raise HTTPException(status_code=404, detail="Follow request not found")
+        
+        # Update status to rejected
+        follow.status = models.FollowStatus.REJECTED
+        
+        # Mark notification as read
+        notification = db.query(models.Notification).filter(
+            models.Notification.user_id == user_id,
+            models.Notification.type == models.NotificationType.FOLLOW_REQUEST,
+            models.Notification.related_id == follower_id,
+            models.Notification.is_read == False
+        ).first()
+        if notification:
+            notification.is_read = True
+        
+        db.commit()
+        
+        return {"message": "Follow request rejected"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Reject follow error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/follow/{user_id}/unfollow/{following_id}")
+async def unfollow_user(
+    user_id: int,
+    following_id: int,
+    db: Session = Depends(get_db)
+):
+    """Unfollow a user (removes both directions)"""
+    try:
+        # Delete both directions of follow
+        db.query(models.Follow).filter(
+            or_(
+                and_(
+                    models.Follow.follower_id == user_id,
+                    models.Follow.following_id == following_id
+                ),
+                and_(
+                    models.Follow.follower_id == following_id,
+                    models.Follow.following_id == user_id
+                )
+            )
+        ).delete(synchronize_session=False)
+        
+        db.commit()
+        return {"message": "Unfollowed successfully"}
+    except Exception as e:
+        print(f"Unfollow error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/follow/{user_id}/status/{other_user_id}")
+async def get_follow_status(
+    user_id: int,
+    other_user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get follow status between two users"""
+    try:
+        # Check if user is following other_user
+        following = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.following_id == other_user_id
+        ).first()
+        
+        # Check if other_user is following user
+        followed_by = db.query(models.Follow).filter(
+            models.Follow.follower_id == other_user_id,
+            models.Follow.following_id == user_id
+        ).first()
+        
+        return {
+            "is_following": following is not None,
+            "follow_status": following.status.value if following else None,
+            "is_followed_by": followed_by is not None,
+            "are_mutual": (
+                following and followed_by and 
+                following.status == models.FollowStatus.ACCEPTED and 
+                followed_by.status == models.FollowStatus.ACCEPTED
+            )
+        }
+    except Exception as e:
+        print(f"Get follow status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/follow/{user_id}/followers")
+async def get_followers(user_id: int, db: Session = Depends(get_db)):
+    """Get list of followers"""
+    try:
+        followers = db.query(models.Follow).filter(
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).all()
+        
+        result = []
+        for follow in followers:
+            user = db.query(models.User).filter(
+                models.User.id == follow.follower_id
+            ).first()
+            if user:
+                result.append({
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "college_id": user.college_id,
+                    "department": user.department,
+                    "year": user.year,
+                    "email": user.email
+                })
+        
+        return result
+    except Exception as e:
+        print(f"Get followers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/follow/{user_id}/following")
+async def get_following(user_id: int, db: Session = Depends(get_db)):
+    """Get list of users being followed"""
+    try:
+        following = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).all()
+        
+        result = []
+        for follow in following:
+            user = db.query(models.User).filter(
+                models.User.id == follow.following_id
+            ).first()
+            if user:
+                result.append({
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "college_id": user.college_id,
+                    "department": user.department,
+                    "year": user.year,
+                    "email": user.email
+                })
+        
+        return result
+    except Exception as e:
+        print(f"Get following error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/follow/{user_id}/requests")
+async def get_follow_requests(user_id: int, db: Session = Depends(get_db)):
+    """Get pending follow requests"""
+    try:
+        requests = db.query(models.Follow).filter(
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.PENDING
+        ).all()
+        
+        result = []
+        for follow in requests:
+            user = db.query(models.User).filter(
+                models.User.id == follow.follower_id
+            ).first()
+            if user:
+                result.append({
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "college_id": user.college_id,
+                    "department": user.department,
+                    "year": user.year,
+                    "email": user.email,
+                    "request_id": follow.id
+                })
+        
+        return result
+    except Exception as e:
+        print(f"Get follow requests error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ SEARCH ENDPOINTS ================
+
+@app.get("/search/users")
+async def search_users(
+    query: str,
+    current_user_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Search users by name, college ID, or email"""
+    try:
+        users = db.query(models.User).filter(
+            or_(
+                models.User.full_name.ilike(f'%{query}%'),
+                models.User.college_id.ilike(f'%{query}%'),
+                models.User.email.ilike(f'%{query}%'),
+                models.User.department.ilike(f'%{query}%')
+            )
+        ).limit(50).all()
+        
+        result = []
+        for user in users:
+            user_data = {
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "college_id": user.college_id,
+                "department": user.department,
+                "year": user.year
+            }
+            
+            # Add follow status if current_user_id provided
+            if current_user_id:
+                follow = db.query(models.Follow).filter(
+                    models.Follow.follower_id == current_user_id,
+                    models.Follow.following_id == user.id
+                ).first()
+                
+                user_data["follow_status"] = follow.status.value if follow else None
+                user_data["is_following"] = follow is not None
+            
+            result.append(user_data)
+        
+        return result
+    except Exception as e:
+        print(f"Search users error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ CHAT ENDPOINTS ================
+
+@app.post("/chat/groups/{user_id}")
+async def create_chat_group(
+    user_id: int,
+    group: ChatGroupCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new chat group"""
+    try:
+        # Create group
+        new_group = models.ChatGroup(
+            name=group.name,
+            description=group.description,
+            created_by=user_id,
+            chat_type=models.ChatType.GROUP
+        )
+        db.add(new_group)
+        db.flush()
+        
+        # Add creator as admin
+        creator_member = models.GroupMember(
+            group_id=new_group.id,
+            user_id=user_id,
+            role="admin"
+        )
+        db.add(creator_member)
+        
+        # Add other members
+        for member_id in group.member_ids:
+            if member_id != user_id:
+                member = models.GroupMember(
+                    group_id=new_group.id,
+                    user_id=member_id,
+                    role="member"
+                )
+                db.add(member)
+                
+                # Create notification
+                notification = models.Notification(
+                    user_id=member_id,
+                    type=models.NotificationType.GROUP_ADDED,
+                    title="Added to Group",
+                    message=f"You were added to {group.name}",
+                    related_id=new_group.id
+                )
+                db.add(notification)
+        
+        db.commit()
+        db.refresh(new_group)
+        return new_group
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat/groups/{user_id}")
+async def get_user_groups(user_id: int, db: Session = Depends(get_db)):
+    """Get all groups for a user"""
+    try:
+        memberships = db.query(models.GroupMember).filter(
+            models.GroupMember.user_id == user_id
+        ).all()
+        
+        groups = []
+        for membership in memberships:
+            group = db.query(models.ChatGroup).filter(
+                models.ChatGroup.id == membership.group_id,
+                models.ChatGroup.is_active == True
+            ).first()
+            
+            if group:
+                # Get last message
+                last_message = db.query(models.ChatMessage).filter(
+                    models.ChatMessage.group_id == group.id
+                ).order_by(models.ChatMessage.created_at.desc()).first()
+                
+                # Get unread count
+                unread_count = db.query(models.ChatMessage).filter(
+                    models.ChatMessage.group_id == group.id,
+                    models.ChatMessage.sender_id != user_id,
+                    models.ChatMessage.is_read == False
+                ).count()
+                
+                groups.append({
+                    "id": group.id,
+                    "name": group.name,
+                    "description": group.description,
+                    "chat_type": group.chat_type.value,
+                    "avatar_url": group.avatar_url,
+                    "last_message": last_message.message if last_message else None,
+                    "last_message_time": last_message.created_at.isoformat() if last_message else None,
+                    "unread_count": unread_count,
+                    "member_count": len(group.members)
+                })
+        
+        return groups
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/groups/{group_id}/messages/{user_id}")
+async def send_message(
+    group_id: int,
+    user_id: int,
+    message: ChatMessageCreate,
+    db: Session = Depends(get_db)
+):
+    """Send a message in a group"""
+    try:
+        # Check if user is member
+        membership = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id
+        ).first()
+        
+        if not membership:
+            raise HTTPException(status_code=403, detail="Not a member of this group")
+        
+        # Create message
+        new_message = models.ChatMessage(
+            group_id=group_id,
+            sender_id=user_id,
+            message=message.message,
+            message_type=message.message_type,
+            media_url=message.media_url
+        )
+        db.add(new_message)
+        
+        # Create notifications for other members
+        other_members = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id != user_id
+        ).all()
+        
+        for member in other_members:
+            notification = models.Notification(
+                user_id=member.user_id,
+                type=models.NotificationType.NEW_MESSAGE,
+                title="New Message",
+                message=f"New message in {membership.group.name}",
+                related_id=group_id
+            )
+            db.add(notification)
+        
+        db.commit()
+        db.refresh(new_message)
+        
+        return {
+            "id": new_message.id,
+            "message": new_message.message,
+            "sender_id": new_message.sender_id,
+            "created_at": new_message.created_at.isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat/groups/{group_id}/messages")
+async def get_group_messages(
+    group_id: int,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """Get messages from a group"""
+    try:
+        messages = db.query(models.ChatMessage).filter(
+            models.ChatMessage.group_id == group_id
+        ).order_by(
+            models.ChatMessage.created_at.desc()
+        ).limit(limit).offset(offset).all()
+        
+        result = []
+        for msg in reversed(messages):
+            sender = db.query(models.User).filter(models.User.id == msg.sender_id).first()
+            result.append({
+                "id": msg.id,
+                "message": msg.message,
+                "message_type": msg.message_type,
+                "media_url": msg.media_url,
+                "sender_id": msg.sender_id,
+                "sender_name": sender.full_name if sender else "Unknown",
+                "created_at": msg.created_at.isoformat()
+            })
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+# ================ ENHANCED CHAT ENDPOINTS ================
+
+@app.get("/chat/groups/{group_id}/members")
+async def get_group_members(group_id: int, db: Session = Depends(get_db)):
+    """Get all members of a group with their roles"""
+    try:
+        members = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id
+        ).all()
+        
+        result = []
+        for member in members:
+            user = db.query(models.User).filter(
+                models.User.id == member.user_id
+            ).first()
+            if user:
+                result.append({
+                    "id": member.id,
+                    "user_id": user.id,
+                    "full_name": user.full_name,
+                    "college_id": user.college_id,
+                    "department": user.department,
+                    "year": user.year,
+                    "role": member.role,
+                    "joined_at": member.joined_at.isoformat()
+                })
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chat/groups/{group_id}/info")
+async def get_group_info(
+    group_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get detailed group information"""
+    try:
+        group = db.query(models.ChatGroup).filter(
+            models.ChatGroup.id == group_id
+        ).first()
+        
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Check if user is member
+        membership = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id
+        ).first()
+        
+        if not membership:
+            raise HTTPException(status_code=403, detail="Not a member of this group")
+        
+        # Get creator info
+        creator = db.query(models.User).filter(
+            models.User.id == group.created_by
+        ).first()
+        
+        # Get member count
+        member_count = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id
+        ).count()
+        
+        return {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "chat_type": group.chat_type.value,
+            "created_by": group.created_by,
+            "creator_name": creator.full_name if creator else "Unknown",
+            "created_at": group.created_at.isoformat(),
+            "member_count": member_count,
+            "user_role": membership.role,
+            "is_admin": membership.role == "admin"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/groups/{group_id}/add-members")
+async def add_members_to_group(
+    group_id: int,
+    user_id: int,
+    member_ids: list[int],
+    db: Session = Depends(get_db)
+):
+    """Add new members to a group (admin only)"""
+    try:
+        # Check if requester is admin
+        membership = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id
+        ).first()
+        
+        if not membership or membership.role != "admin":
+            raise HTTPException(status_code=403, detail="Only admins can add members")
+        
+        group = db.query(models.ChatGroup).filter(
+            models.ChatGroup.id == group_id
+        ).first()
+        
+        added_count = 0
+        for member_id in member_ids:
+            # Check if already a member
+            existing = db.query(models.GroupMember).filter(
+                models.GroupMember.group_id == group_id,
+                models.GroupMember.user_id == member_id
+            ).first()
+            
+            if not existing:
+                new_member = models.GroupMember(
+                    group_id=group_id,
+                    user_id=member_id,
+                    role="member"
+                )
+                db.add(new_member)
+                
+                # Create notification
+                notification = models.Notification(
+                    user_id=member_id,
+                    type=models.NotificationType.GROUP_ADDED,
+                    title="Added to Group",
+                    message=f"You were added to {group.name}",
+                    related_id=group_id
+                )
+                db.add(notification)
+                added_count += 1
+        
+        db.commit()
+        return {"message": f"Added {added_count} new members"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/chat/groups/{group_id}/remove-member/{member_user_id}")
+async def remove_member_from_group(
+    group_id: int,
+    member_user_id: int,
+    admin_user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Remove a member from group (admin only)"""
+    try:
+        # Check if requester is admin
+        admin_membership = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == admin_user_id
+        ).first()
+        
+        if not admin_membership or admin_membership.role != "admin":
+            raise HTTPException(status_code=403, detail="Only admins can remove members")
+        
+        # Can't remove yourself if you're the creator
+        group = db.query(models.ChatGroup).filter(
+            models.ChatGroup.id == group_id
+        ).first()
+        
+        if member_user_id == group.created_by:
+            raise HTTPException(status_code=403, detail="Cannot remove group creator")
+        
+        # Remove member
+        db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == member_user_id
+        ).delete()
+        
+        db.commit()
+        return {"message": "Member removed successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/groups/{group_id}/leave/{user_id}")
+async def leave_group(
+    group_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Leave a group"""
+    try:
+        group = db.query(models.ChatGroup).filter(
+            models.ChatGroup.id == group_id
+        ).first()
+        
+        if not group:
+            raise HTTPException(status_code=404, detail="Group not found")
+        
+        # Check if user is a member
+        membership = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id
+        ).first()
+        
+        if not membership:
+            raise HTTPException(status_code=404, detail="Not a member of this group")
+        
+        # If creator, transfer admin or delete group
+        if group.created_by == user_id:
+            # Check if there are other members
+            other_members = db.query(models.GroupMember).filter(
+                models.GroupMember.group_id == group_id,
+                models.GroupMember.user_id != user_id
+            ).all()
+            
+            if other_members:
+                # Transfer admin to first member
+                other_members[0].role = "admin"
+                group.created_by = other_members[0].user_id
+                
+                # Notify new admin
+                notification = models.Notification(
+                    user_id=other_members[0].user_id,
+                    type=models.NotificationType.GROUP_ADDED,
+                    title="You're now Group Admin",
+                    message=f"You've been made admin of {group.name}",
+                    related_id=group_id
+                )
+                db.add(notification)
+            else:
+                # Delete group if no other members
+                group.is_active = False
+        
+        # Remove user from group
+        db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == user_id
+        ).delete(synchronize_session=False)
+        
+        db.commit()
+        return {"message": "Left group successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Leave group error: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/chat/groups/{group_id}/make-admin/{member_user_id}")
+async def make_member_admin(
+    group_id: int,
+    member_user_id: int,
+    admin_user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Make a member an admin (creator only)"""
+    try:
+        group = db.query(models.ChatGroup).filter(
+            models.ChatGroup.id == group_id
+        ).first()
+        
+        if group.created_by != admin_user_id:
+            raise HTTPException(status_code=403, detail="Only creator can make admins")
+        
+        member = db.query(models.GroupMember).filter(
+            models.GroupMember.group_id == group_id,
+            models.GroupMember.user_id == member_user_id
+        ).first()
+        
+        if not member:
+            raise HTTPException(status_code=404, detail="Member not found")
+        
+        member.role = "admin"
+        db.commit()
+        
+        return {"message": "Member promoted to admin"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/chat/groups/{user_id}")
+async def create_chat_group(
+    user_id: int,
+    group: ChatGroupCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new chat group - Only with mutually following users"""
+    try:
+        # Verify all members are mutually following the creator
+        invalid_members = []
+        for member_id in group.member_ids:
+            if member_id != user_id:
+                # Check mutual follow
+                follow1 = db.query(models.Follow).filter(
+                    models.Follow.follower_id == user_id,
+                    models.Follow.following_id == member_id,
+                    models.Follow.status == models.FollowStatus.ACCEPTED
+                ).first()
+                
+                follow2 = db.query(models.Follow).filter(
+                    models.Follow.follower_id == member_id,
+                    models.Follow.following_id == user_id,
+                    models.Follow.status == models.FollowStatus.ACCEPTED
+                ).first()
+                
+                if not (follow1 and follow2):
+                    user = db.query(models.User).filter(
+                        models.User.id == member_id
+                    ).first()
+                    invalid_members.append(user.full_name if user else str(member_id))
+        
+        if invalid_members:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Can only add mutual followers. Not mutual: {', '.join(invalid_members)}"
+            )
+        
+        # Create group
+        new_group = models.ChatGroup(
+            name=group.name,
+            description=group.description,
+            created_by=user_id,
+            chat_type=models.ChatType.GROUP
+        )
+        db.add(new_group)
+        db.flush()
+        
+        # Add creator as admin
+        creator_member = models.GroupMember(
+            group_id=new_group.id,
+            user_id=user_id,
+            role="admin"
+        )
+        db.add(creator_member)
+        
+        # Add other members
+        for member_id in group.member_ids:
+            if member_id != user_id:
+                member = models.GroupMember(
+                    group_id=new_group.id,
+                    user_id=member_id,
+                    role="member"
+                )
+                db.add(member)
+                
+                # Create notification
+                notification = models.Notification(
+                    user_id=member_id,
+                    type=models.NotificationType.GROUP_ADDED,
+                    title="Added to Group",
+                    message=f"You were added to {group.name}",
+                    related_id=new_group.id
+                )
+                db.add(notification)
+        
+        db.commit()
+        db.refresh(new_group)
+        return new_group
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ FEED/POSTS ENDPOINTS ================
+
+@app.post("/posts/{user_id}")
+async def create_post(
+    user_id: int,
+    post: PostCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new post"""
+    try:
+        new_post = models.Post(
+            user_id=user_id,
+            content=post.content,
+            media_url=post.media_url,
+            media_type=post.media_type,
+            is_announcement=post.is_announcement
+        )
+        db.add(new_post)
+        db.commit()
+        db.refresh(new_post)
+        
+        # If announcement, notify all followers
+        if post.is_announcement:
+            followers = db.query(models.Follow).filter(
+                models.Follow.following_id == user_id,
+                models.Follow.status == models.FollowStatus.ACCEPTED
+            ).all()
+            
+            for follow in followers:
+                notification = models.Notification(
+                    user_id=follow.follower_id,
+                    type=models.NotificationType.ADMIN_BROADCAST,
+                    title="New Announcement",
+                    message=f"New announcement posted",
+                    related_id=new_post.id
+                )
+                db.add(notification)
+            
+            db.commit()
+        
+        return new_post
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/posts/feed/{user_id}")
+async def get_feed(
+    user_id: int,
+    limit: int = 20,
+    offset: int = 0,
+    db: Session = Depends(get_db)
+):
+    """Get feed for a user (posts from followed users + own posts)"""
+    try:
+        # Get followed users
+        following = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).all()
+        
+        followed_ids = [f.following_id for f in following]
+        followed_ids.append(user_id)  # Include own posts
+        
+        # Get posts
+        posts = db.query(models.Post).filter(
+            models.Post.user_id.in_(followed_ids)
+        ).order_by(
+            models.Post.created_at.desc()
+        ).limit(limit).offset(offset).all()
+        
+        result = []
+        for post in posts:
+            author = db.query(models.User).filter(models.User.id == post.user_id).first()
+            likes_count = len(post.likes)
+            comments_count = len(post.comments)
+            user_liked = any(like.user_id == user_id for like in post.likes)
+            
+            result.append({
+                "id": post.id,
+                "content": post.content,
+                "media_url": post.media_url,
+                "media_type": post.media_type,
+                "is_announcement": post.is_announcement,
+                "author": {
+                    "id": author.id,
+                    "full_name": author.full_name,
+                    "department": author.department,
+                    "year": author.year
+                },
+                "likes_count": likes_count,
+                "comments_count": comments_count,
+                "user_liked": user_liked,
+                "created_at": post.created_at.isoformat()
+            })
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/posts/{post_id}/like/{user_id}")
+async def like_post(post_id: int, user_id: int, db: Session = Depends(get_db)):
+    """Like a post"""
+    try:
+        # Check if already liked
+        existing = db.query(models.Like).filter(
+            models.Like.post_id == post_id,
+            models.Like.user_id == user_id
+        ).first()
+        
+        if existing:
+            # Unlike
+            db.delete(existing)
+            db.commit()
+            return {"message": "Post unliked"}
+        else:
+            # Like
+            new_like = models.Like(post_id=post_id, user_id=user_id)
+            db.add(new_like)
+            
+            # Create notification
+            post = db.query(models.Post).filter(models.Post.id == post_id).first()
+            if post and post.user_id != user_id:
+                notification = models.Notification(
+                    user_id=post.user_id,
+                    type=models.NotificationType.POST_LIKE,
+                    title="New Like",
+                    message=f"Someone liked your post",
+                    related_id=post_id
+                )
+                db.add(notification)
+            
+            db.commit()
+            return {"message": "Post liked"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/posts/{post_id}/comment/{user_id}")
+async def add_comment(
+    post_id: int,
+    user_id: int,
+    comment: CommentCreate,
+    db: Session = Depends(get_db)
+):
+    """Add a comment to a post"""
+    try:
+        new_comment = models.Comment(
+            post_id=post_id,
+            user_id=user_id,
+            content=comment.content
+        )
+        db.add(new_comment)
+        
+        # Create notification
+        post = db.query(models.Post).filter(models.Post.id == post_id).first()
+        if post and post.user_id != user_id:
+            notification = models.Notification(
+                user_id=post.user_id,
+                type=models.NotificationType.POST_COMMENT,
+                title="New Comment",
+                message=f"Someone commented on your post",
+                related_id=post_id
+            )
+            db.add(notification)
+        
+        db.commit()
+        db.refresh(new_comment)
+        
+        author = db.query(models.User).filter(models.User.id == user_id).first()
+        return {
+            "id": new_comment.id,
+            "content": new_comment.content,
+            "author": {
+                "id": author.id,
+                "full_name": author.full_name
+            },
+            "created_at": new_comment.created_at.isoformat()
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/posts/{post_id}/comments")
+async def get_comments(post_id: int, db: Session = Depends(get_db)):
+    """Get comments for a post"""
+    try:
+        comments = db.query(models.Comment).filter(
+            models.Comment.post_id == post_id
+        ).order_by(models.Comment.created_at.asc()).all()
+        
+        result = []
+        for comment in comments:
+            author = db.query(models.User).filter(models.User.id == comment.user_id).first()
+            result.append({
+                "id": comment.id,
+                "content": comment.content,
+                "author": {
+                    "id": author.id,
+                    "full_name": author.full_name,
+                    "department": author.department
+                },
+                "created_at": comment.created_at.isoformat()
+            })
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+# ================ DELETE POST ENDPOINT ================
+
+@app.delete("/posts/{post_id}")
+async def delete_post(
+    post_id: int, 
+    user_id: int, 
+    db: Session = Depends(get_db)
+):
+    """Delete a post"""
+    try:
+        # First verify the post exists and user owns it
+        post = db.query(models.Post).filter(
+            models.Post.id == post_id,
+            models.Post.user_id == user_id
+        ).first()
+        
+        if not post:
+            raise HTTPException(
+                status_code=404, 
+                detail="Post not found or you don't have permission to delete it"
+            )
+        
+        # Delete related records in order
+        # 1. Delete notifications related to this post
+        db.query(models.Notification).filter(
+            models.Notification.related_id == post_id,
+            models.Notification.type.in_([
+                models.NotificationType.POST_LIKE,
+                models.NotificationType.POST_COMMENT,
+                models.NotificationType.ADMIN_BROADCAST
+            ])
+        ).delete(synchronize_session=False)
+        
+        # 2. Delete comments
+        db.query(models.Comment).filter(
+            models.Comment.post_id == post_id
+        ).delete(synchronize_session=False)
+        
+        # 3. Delete likes
+        db.query(models.Like).filter(
+            models.Like.post_id == post_id
+        ).delete(synchronize_session=False)
+        
+        # 4. Finally delete the post
+        db.delete(post)
+        db.commit()
+        
+        return {"message": "Post deleted successfully", "success": True}
+        
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        print(f"Delete error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error deleting post: {str(e)}")
+
+
+# ================ EDIT POST ENDPOINT ================
+
+@app.put("/posts/{post_id}")
+async def edit_post(
+    post_id: int,
+    user_id: int,
+    post_update: PostCreate,
+    db: Session = Depends(get_db)
+):
+    """Edit a post"""
+    try:
+        post = db.query(models.Post).filter(
+            models.Post.id == post_id,
+            models.Post.user_id == user_id
+        ).first()
+        
+        if not post:
+            raise HTTPException(
+                status_code=404,
+                detail="Post not found or you don't have permission to edit it"
+            )
+        
+        post.content = post_update.content
+        if post_update.media_url:
+            post.media_url = post_update.media_url
+        post.updated_at = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(post)
+        
+        return {
+            "id": post.id,
+            "content": post.content,
+            "media_url": post.media_url,
+            "updated_at": post.updated_at.isoformat(),
+            "message": "Post updated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ DISCUSSION ENDPOINTS ================
+
+# ================ DISCUSSION ENDPOINTS ================
+
+@app.post("/discussions/{user_id}")
+async def create_discussion(
+    user_id: int,
+    discussion: DiscussionCreate,
+    db: Session = Depends(get_db)
+):
+    """Create a new discussion"""
+    try:
+        new_discussion = models.Discussion(
+            user_id=user_id,
+            title=discussion.title,
+            topic=discussion.topic,
+            content=discussion.content,
+            visibility=models.DiscussionVisibility.PUBLIC if discussion.visibility == "public" else models.DiscussionVisibility.RESTRICTED,
+            allowed_departments=discussion.allowed_departments,
+            allowed_years=discussion.allowed_years
+        )
+        db.add(new_discussion)
+        db.commit()
+        db.refresh(new_discussion)
+        
+        # Add creator as participant
+        participant = models.DiscussionParticipant(
+            discussion_id=new_discussion.id,
+            user_id=user_id,
+            is_admin=True
+        )
+        db.add(participant)
+        db.commit()
+        
+        return new_discussion
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Create discussion error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/discussions")
+async def get_discussions(
+    user_id: int, 
+    topic: Optional[str] = None, 
+    limit: int = 20, 
+    offset: int = 0, 
+    db: Session = Depends(get_db)
+):
+    """Get all discussions visible to the user"""
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        query = db.query(models.Discussion).filter(
+            or_(
+                models.Discussion.visibility == models.DiscussionVisibility.PUBLIC,
+                and_(
+                    models.Discussion.visibility == models.DiscussionVisibility.RESTRICTED,
+                    or_(
+                        models.Discussion.allowed_departments.ilike(f"%{user.department}%"),
+                        models.Discussion.allowed_years.ilike(f"%{user.year}%")
+                    )
+                )
+            )
+        )
+        
+        if topic and topic != 'all':
+            query = query.filter(models.Discussion.topic == topic)
+        
+        discussions = query.order_by(
+            models.Discussion.created_at.desc()
+        ).limit(limit).offset(offset).all()
+        
+        result = []
+        for disc in discussions:
+            author = db.query(models.User).filter(models.User.id == disc.user_id).first()
+            replies_count = db.query(models.DiscussionReply).filter(
+                models.DiscussionReply.discussion_id == disc.id
+            ).count()
+            
+            # Check if user is participant
+            is_participant = db.query(models.DiscussionParticipant).filter(
+                models.DiscussionParticipant.discussion_id == disc.id,
+                models.DiscussionParticipant.user_id == user_id
+            ).first() is not None
+            
+            # Check if user is admin
+            is_admin = db.query(models.DiscussionParticipant).filter(
+                models.DiscussionParticipant.discussion_id == disc.id,
+                models.DiscussionParticipant.user_id == user_id,
+                models.DiscussionParticipant.is_admin == True
+            ).first() is not None
+            
+            result.append({
+                "id": disc.id,
+                "title": disc.title,
+                "topic": disc.topic,
+                "content": disc.content,
+                "author": {
+                    "id": author.id,
+                    "full_name": author.full_name
+                } if author else {"id": 0, "full_name": "Unknown"},
+                "replies_count": replies_count,
+                "is_participant": is_participant,
+                "is_admin": is_admin,
+                "created_at": disc.created_at.isoformat()
+            })
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Discussion fetch error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/discussions/{discussion_id}/join/{user_id}")
+async def join_discussion(
+    discussion_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Join a discussion"""
+    try:
+        # Check if already participant
+        existing = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id,
+            models.DiscussionParticipant.user_id == user_id
+        ).first()
+        
+        if existing:
+            raise HTTPException(status_code=400, detail="Already a participant")
+        
+        participant = models.DiscussionParticipant(
+            discussion_id=discussion_id,
+            user_id=user_id,
+            is_admin=False
+        )
+        db.add(participant)
+        db.commit()
+        
+        return {"message": "Joined successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/discussions/{discussion_id}/leave/{user_id}")
+async def leave_discussion(
+    discussion_id: int,
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Leave a discussion"""
+    try:
+        participant = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id,
+            models.DiscussionParticipant.user_id == user_id
+        ).first()
+        
+        if not participant:
+            raise HTTPException(status_code=404, detail="Not a participant")
+        
+        # Check if user is the creator
+        discussion = db.query(models.Discussion).filter(
+            models.Discussion.id == discussion_id
+        ).first()
+        
+        if discussion.user_id == user_id:
+            raise HTTPException(
+                status_code=400, 
+                detail="Creator cannot leave. Delete the discussion instead."
+            )
+        
+        db.delete(participant)
+        db.commit()
+        
+        return {"message": "Left successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/discussions/{discussion_id}/remove/{target_user_id}")
+async def remove_participant(
+    discussion_id: int,
+    target_user_id: int,
+    admin_user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Admin removes a participant"""
+    try:
+        # Check if requester is admin
+        admin = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id,
+            models.DiscussionParticipant.user_id == admin_user_id,
+            models.DiscussionParticipant.is_admin == True
+        ).first()
+        
+        if not admin:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        # Cannot remove creator
+        discussion = db.query(models.Discussion).filter(
+            models.Discussion.id == discussion_id
+        ).first()
+        
+        if discussion.user_id == target_user_id:
+            raise HTTPException(status_code=400, detail="Cannot remove creator")
+        
+        # Remove participant
+        participant = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id,
+            models.DiscussionParticipant.user_id == target_user_id
+        ).first()
+        
+        if not participant:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        db.delete(participant)
+        
+        # Notify removed user
+        notification = models.Notification(
+            user_id=target_user_id,
+            type=models.NotificationType.DISCUSSION_REPLY,
+            title="Removed from Discussion",
+            message=f"You were removed from '{discussion.title}'",
+            related_id=discussion_id
+        )
+        db.add(notification)
+        
+        db.commit()
+        
+        return {"message": "Participant removed"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/discussions/{discussion_id}/participants")
+async def get_participants(discussion_id: int, db: Session = Depends(get_db)):
+    """Get all participants"""
+    try:
+        participants = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id
+        ).all()
+        
+        result = []
+        for p in participants:
+            user = db.query(models.User).filter(models.User.id == p.user_id).first()
+            if user:
+                result.append({
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "is_admin": p.is_admin,
+                    "joined_at": p.joined_at.isoformat()
+                })
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/discussions/{discussion_id}/reply/{user_id}")
+async def add_discussion_reply(
+    discussion_id: int,
+    user_id: int,
+    reply: DiscussionReplyCreate,
+    db: Session = Depends(get_db)
+):
+    """Reply to a discussion"""
+    try:
+        # Auto-join if not participant
+        existing = db.query(models.DiscussionParticipant).filter(
+            models.DiscussionParticipant.discussion_id == discussion_id,
+            models.DiscussionParticipant.user_id == user_id
+        ).first()
+        
+        if not existing:
+            participant = models.DiscussionParticipant(
+                discussion_id=discussion_id,
+                user_id=user_id,
+                is_admin=False
+            )
+            db.add(participant)
+        
+        new_reply = models.DiscussionReply(
+            discussion_id=discussion_id,
+            user_id=user_id,
+            content=reply.content,
+            parent_reply_id=reply.parent_reply_id
+        )
+        db.add(new_reply)
+        
+        discussion = db.query(models.Discussion).filter(
+            models.Discussion.id == discussion_id
+        ).first()
+        
+        if discussion and discussion.user_id != user_id:
+            notification = models.Notification(
+                user_id=discussion.user_id,
+                type=models.NotificationType.DISCUSSION_REPLY,
+                title="New Reply",
+                message=f"Someone replied to your discussion",
+                related_id=discussion_id
+            )
+            db.add(notification)
+        
+        db.commit()
+        db.refresh(new_reply)
+        
+        author = db.query(models.User).filter(models.User.id == user_id).first()
+        return {
+            "id": new_reply.id,
+            "content": new_reply.content,
+            "parent_reply_id": new_reply.parent_reply_id,
+            "author": {
+                "id": author.id,
+                "full_name": author.full_name
+            } if author else {"id": 0, "full_name": "Unknown"},
+            "created_at": new_reply.created_at.isoformat()
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logging.error(f"Add reply error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/discussions/{discussion_id}/replies")
+async def get_discussion_replies(discussion_id: int, db: Session = Depends(get_db)):
+    """Get replies for a discussion"""
+    try:
+        replies = db.query(models.DiscussionReply).filter(
+            models.DiscussionReply.discussion_id == discussion_id
+        ).order_by(models.DiscussionReply.created_at.asc()).all()
+        
+        result = []
+        for reply in replies:
+            author = db.query(models.User).filter(models.User.id == reply.user_id).first()
+            result.append({
+                "id": reply.id,
+                "content": reply.content,
+                "parent_reply_id": reply.parent_reply_id,
+                "author": {
+                    "id": author.id,
+                    "full_name": author.full_name
+                } if author else {"id": 0, "full_name": "Unknown"},
+                "created_at": reply.created_at.isoformat()
+            })
+        
+        return result
+        
+    except Exception as e:
+        logging.error(f"Get replies error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ USER PROFILE ENDPOINTS ================
+
+@app.get("/profile/{user_id}")
+async def get_user_profile(user_id: int, viewer_id: int, db: Session = Depends(get_db)):
+    """Get user profile with stats"""
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Get stats
+        followers_count = db.query(models.Follow).filter(
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).count()
+        
+        following_count = db.query(models.Follow).filter(
+            models.Follow.follower_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).count()
+        
+        posts_count = db.query(models.Post).filter(models.Post.user_id == user_id).count()
+        
+        # Check if viewer is following
+        is_following = db.query(models.Follow).filter(
+            models.Follow.follower_id == viewer_id,
+            models.Follow.following_id == user_id,
+            models.Follow.status == models.FollowStatus.ACCEPTED
+        ).first() is not None
+        
+        # Get recent posts
+        recent_posts = db.query(models.Post).filter(
+            models.Post.user_id == user_id
+        ).order_by(models.Post.created_at.desc()).limit(6).all()
+        
+        posts_data = []
+        for post in recent_posts:
+            posts_data.append({
+                "id": post.id,
+                "content": post.content,
+                "media_url": post.media_url,
+                "likes_count": len(post.likes),
+                "comments_count": len(post.comments),
+                "created_at": post.created_at.isoformat()
+            })
+        
+        return {
+            "user": {
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "college_id": user.college_id,
+                "department": user.department,
+                "year": user.year,
+                "phone_number": user.phone_number
+            },
+            "stats": {
+                "followers": followers_count,
+                "following": following_count,
+                "posts": posts_count
+            },
+            "is_following": is_following,
+            "recent_posts": posts_data
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ================ SEARCH ENDPOINTS ================
+
+@app.get("/search/users")
+async def search_users(
+    query: str,
+    department: Optional[str] = None,
+    year: Optional[int] = None,
+    limit: int = 20,
+    db: Session = Depends(get_db)
+):
+    """Search for users"""
+    try:
+        search_query = db.query(models.User).filter(
+            or_(
+                models.User.full_name.ilike(f"%{query}%"),
+                models.User.college_id.ilike(f"%{query}%"),
+                models.User.email.ilike(f"%{query}%")
+            )
+        )
+        
+        if department:
+            search_query = search_query.filter(models.User.department == department)
+        
+        if year:
+            search_query = search_query.filter(models.User.year == year)
+        
+        users = search_query.limit(limit).all()
+        
+        return [
+            {
+                "id": user.id,
+                "full_name": user.full_name,
+                "college_id": user.college_id,
+                "department": user.department,
+                "year": user.year
+            }
+            for user in users
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+# ================ NOTIFICATION ENDPOINTS ================
+
+@app.get("/notifications/{user_id}")
+async def get_notifications(
+    user_id: int,
+    unread_only: bool = False,
+    db: Session = Depends(get_db)
+):
+    """Get user notifications"""
+    try:
+        query = db.query(models.Notification).filter(
+            models.Notification.user_id == user_id
+        )
+        
+        if unread_only:
+            query = query.filter(models.Notification.is_read == False)
+        
+        notifications = query.order_by(
+            models.Notification.created_at.desc()
+        ).all()
+        
+        return [
+            {
+                "id": n.id,
+                "type": n.type.value,
+                "title": n.title,
+                "message": n.message,
+                "related_id": n.related_id,
+                "is_read": n.is_read,
+                "created_at": n.created_at.isoformat()
+            }
+            for n in notifications
+        ]
+    except Exception as e:
+        print(f"Get notifications error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: int,
+    db: Session = Depends(get_db)
+):
+    """Mark a notification as read"""
+    try:
+        notification = db.query(models.Notification).filter(
+            models.Notification.id == notification_id
+        ).first()
+        
+        if not notification:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        notification.is_read = True
+        db.commit()
+        
+        return {"message": "Notification marked as read"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Mark notification read error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/notifications/{user_id}/read-all")
+async def mark_all_notifications_read(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Mark all notifications as read for a user"""
+    try:
+        db.query(models.Notification).filter(
+            models.Notification.user_id == user_id,
+            models.Notification.is_read == False
+        ).update({"is_read": True})
+        
+        db.commit()
+        
+        return {"message": "All notifications marked as read"}
+    except Exception as e:
+        print(f"Mark all read error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/notifications/{notification_id}")
+async def delete_notification(
+    notification_id: int,
+    db: Session = Depends(get_db)
+):
+    """Delete a notification"""
+    try:
+        notification = db.query(models.Notification).filter(
+            models.Notification.id == notification_id
+        ).first()
+        
+        if not notification:
+            raise HTTPException(status_code=404, detail="Notification not found")
+        
+        db.delete(notification)
+        db.commit()
+        
+        return {"message": "Notification deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Delete notification error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
