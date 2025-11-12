@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status,Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr,validator
 from datetime import datetime, timedelta, date
@@ -12,6 +12,8 @@ import string
 from passlib.context import CryptContext
 import jwt
 from difflib import SequenceMatcher
+
+import traceback
 
 from newapp.database import SessionLocal, engine
 from newapp import models
@@ -4356,11 +4358,741 @@ async def delete_notification(
         print(f"Delete notification error: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+# marketplace_routes.py ####API 's for marketplace functionalities
+# ================marketplace_route ENDPOINTS ================
 
+# Pydantic Models
+class SellerInfo(BaseModel):
+    id: int
+    name: str
+    avatar: str
+    college: str
+    verified: bool = True
+    rating: float = 4.5
+    itemsSold: int
+
+class MarketplaceItemBase(BaseModel):
+    title: str
+    description: str
+    price: str
+    category: str
+    condition: str
+    location: str
+
+class MarketplaceItemCreate(MarketplaceItemBase):
+    seller_id: int
+    images: List[str] = []
+    is_negotiable: bool = False
+
+class MarketplaceItemResponse(BaseModel):
+    id: int
+    title: str
+    description: str
+    price: str
+    category: str
+    condition: str
+    location: str
+    images: List[str]
+    views: int = 0
+    isNegotiable: bool = False
+    isSaved: bool = False
+    postedDate: str
+    seller: SellerInfo
+
+class ChatCreate(BaseModel):
+    item_id: int
+    buyer_id: int
+
+class MessageCreate(BaseModel):
+    sender_id: int
+    message: str
+    message_type: str = "text"
+    offer_amount: Optional[str] = None
+
+# Helper function
+def get_relative_time(dt: datetime) -> str:
+    now = datetime.utcnow()
+    diff = now - dt
+    
+    if diff.days > 7:
+        return f"{diff.days // 7} weeks ago"
+    elif diff.days > 0:
+        return f"{diff.days} days ago"
+    elif diff.seconds > 3600:
+        return f"{diff.seconds // 3600} hours ago"
+    elif diff.seconds > 60:
+        return f"{diff.seconds // 60} minutes ago"
+    else:
+        return "Just now"
+
+# Get all marketplace items
+@app.get("/marketplace/items", response_model=List[MarketplaceItemResponse])
+async def get_marketplace_items(
+    category: str = Query("all"),
+    search: str = Query(""),
+    user_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Getting marketplace items - category: {category}, user_id: {user_id}")
+        query = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.status == 'active'
+        )
+        
+        if category != 'all':
+            query = query.filter(models.MarketplaceItem.category == category)
+        
+        if search:
+            query = query.filter(
+                or_(
+                    models.MarketplaceItem.title.ilike(f"%{search}%"),
+                    models.MarketplaceItem.description.ilike(f"%{search}%")
+                )
+            )
+        
+        items = query.order_by(models.MarketplaceItem.created_at.desc()).all()
+        
+        result = []
+        for item in items:
+            is_saved = False
+            if user_id:
+                is_saved = db.query(models.SavedItem).filter(
+                    models.SavedItem.user_id == user_id, 
+                    models.SavedItem.item_id == item.id
+                ).first() is not None
+            
+            posted_date = get_relative_time(item.created_at)
+            
+            seller_items_sold = db.query(models.MarketplaceItem).filter(
+                models.MarketplaceItem.seller_id == item.seller_id, 
+                models.MarketplaceItem.status == 'sold'
+            ).count()
+            
+            result.append(MarketplaceItemResponse(
+                id=item.id,
+                title=item.title,
+                description=item.description,
+                price=item.price,
+                category=item.category,
+                condition=item.condition,
+                location=item.location,
+                images=item.images or [],
+                views=item.views,
+                isNegotiable=item.is_negotiable,
+                isSaved=is_saved,
+                postedDate=posted_date,
+                seller=SellerInfo(
+                    id=item.seller.id,
+                    name=item.seller.full_name,
+                    avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={item.seller.full_name}",
+                    college=item.seller.department,
+                    verified=True,
+                    rating=4.5,
+                    itemsSold=seller_items_sold
+                )
+            ))
+        
+        return result
+        
+    except Exception as e:
+        print(f"ERROR in get_marketplace_items:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Get single item details
+@app.get("/marketplace/items/{item_id}", response_model=MarketplaceItemResponse)
+async def get_item_details(
+    item_id: int,
+    user_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    try:
+        item = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.id == item_id
+        ).first()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        # Increment view count
+        item.views += 1
+        db.commit()
+        
+        is_saved = False
+        if user_id:
+            is_saved = db.query(models.SavedItem).filter(
+                models.SavedItem.user_id == user_id, 
+                models.SavedItem.item_id == item_id
+            ).first() is not None
+        
+        posted_date = get_relative_time(item.created_at)
+        
+        seller_items_sold = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.seller_id == item.seller_id,
+            models.MarketplaceItem.status == 'sold'
+        ).count()
+        
+        return MarketplaceItemResponse(
+            id=item.id,
+            title=item.title,
+            description=item.description,
+            price=item.price,
+            category=item.category,
+            condition=item.condition,
+            location=item.location,
+            images=item.images or [],
+            views=item.views,
+            isNegotiable=item.is_negotiable,
+            isSaved=is_saved,
+            postedDate=posted_date,
+            seller=SellerInfo(
+                id=item.seller.id,
+                name=item.seller.full_name,
+                avatar=f"https://api.dicebear.com/7.x/avataaars/svg?seed={item.seller.full_name}",
+                college=item.seller.department,
+                verified=True,
+                rating=4.5,
+                itemsSold=seller_items_sold
+            )
+        )
+        
+    except Exception as e:
+        print(f"ERROR in get_item_details:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Create new item
+@app.post("/marketplace/items")
+async def create_item(
+    item: MarketplaceItemCreate,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Creating item: {item.title} for seller {item.seller_id}")
+        
+        # Verify user exists
+        user = db.query(models.User).filter(
+            models.User.id == item.seller_id
+        ).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        new_item = models.MarketplaceItem(
+            seller_id=item.seller_id,
+            title=item.title,
+            description=item.description,
+            price=item.price,
+            category=item.category,
+            condition=item.condition,
+            location=item.location,
+            images=item.images or [],
+            is_negotiable=item.is_negotiable,
+            status='active'
+        )
+        
+        db.add(new_item)
+        db.commit()
+        db.refresh(new_item)
+        
+        print(f"Item created successfully with id {new_item.id}")
+        
+        return {
+            'message': 'Item created successfully',
+            'item_id': new_item.id
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in create_item:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Update item
+@app.put("/marketplace/items/{item_id}")
+async def update_item(
+    item_id: int,
+    item_data: MarketplaceItemCreate,
+    db: Session = Depends(get_db)
+):
+    try:
+        item = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.id == item_id
+        ).first()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        # Verify ownership
+        if item.seller_id != item_data.seller_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        if item_data.title:
+            item.title = item_data.title
+        if item_data.description:
+            item.description = item_data.description
+        if item_data.price:
+            item.price = item_data.price
+        if item_data.category:
+            item.category = item_data.category
+        if item_data.condition:
+            item.condition = item_data.condition
+        if item_data.location:
+            item.location = item_data.location
+        if item_data.images:
+            item.images = item_data.images
+        if item_data.is_negotiable is not None:
+            item.is_negotiable = item_data.is_negotiable
+        
+        item.updated_at = datetime.utcnow()
+        db.commit()
+        
+        return {'message': 'Item updated successfully'}
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in update_item:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Delete item - FIX for chat cascade
+@app.delete("/marketplace/items/{item_id}")
+async def delete_item(
+    item_id: int,
+    user_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        item = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.id == item_id
+        ).first()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        # Verify ownership
+        if item.seller_id != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Delete associated chats first
+        db.query(models.MarketplaceChat).filter(
+            models.MarketplaceChat.item_id == item_id
+        ).delete()
+        
+        # Delete saved items
+        db.query(models.SavedItem).filter(
+            models.SavedItem.item_id == item_id
+        ).delete()
+        
+        # Now delete the item
+        db.delete(item)
+        db.commit()
+        
+        return {'message': 'Item deleted successfully'}
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in delete_item:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Mark as sold - FINAL FIX
+@app.post("/marketplace/items/{item_id}/sold")
+async def mark_as_sold(
+    item_id: int,
+    user_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Marking item {item_id} as sold by user {user_id}")
+        
+        item = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.id == item_id
+        ).first()
+        
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        # Verify ownership
+        if item.seller_id != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        item.status = 'sold'
+        item.updated_at = datetime.utcnow()
+        db.commit()
+        
+        return {'message': 'Item marked as sold', 'status': 'sold'}
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in mark_as_sold:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Get user's listings
+@app.get("/marketplace/my-listings/{user_id}")
+async def get_my_listings(
+    user_id: int,
+    status: str = Query("active"),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Getting listings for user {user_id} with status {status}")
+        items = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.seller_id == user_id,
+            models.MarketplaceItem.status == status
+        ).order_by(models.MarketplaceItem.created_at.desc()).all()
+        
+        result = []
+        for item in items:
+            inquiries = db.query(models.MarketplaceChat).filter(
+                models.MarketplaceChat.item_id == item.id
+            ).count()
+            posted_date = get_relative_time(item.created_at)
+            
+            result.append({
+                'id': item.id,
+                'title': item.title,
+                'description': item.description,
+                'price': item.price,
+                'category': item.category,
+                'condition': item.condition,
+                'location': item.location,
+                'images': item.images or [],
+                'views': item.views,
+                'status': item.status,
+                'inquiries': inquiries,
+                'postedDate': posted_date
+            })
+        
+        return result
+    
+    except Exception as e:
+        print(f"ERROR in get_my_listings:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Save/Unsave item - FINAL FIX
+@app.post("/marketplace/items/{item_id}/save")
+async def toggle_save_item(
+    item_id: int,
+    user_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Toggle save for item {item_id}, user {user_id}")
+        
+        saved = db.query(models.SavedItem).filter(
+            models.SavedItem.user_id == user_id,
+            models.SavedItem.item_id == item_id
+        ).first()
+        
+        if saved:
+            db.delete(saved)
+            db.commit()
+            return {'message': 'Item unsaved', 'is_saved': False}
+        else:
+            new_save = models.SavedItem(user_id=user_id, item_id=item_id)
+            db.add(new_save)
+            db.commit()
+            return {'message': 'Item saved', 'is_saved': True}
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in toggle_save_item:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+# Get saved items
+@app.get("/marketplace/saved/{user_id}")
+async def get_saved_items(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Getting saved items for user {user_id}")
+        saved_items = db.query(models.SavedItem).filter(
+            models.SavedItem.user_id == user_id
+        ).all()
+        
+        result = []
+        for saved in saved_items:
+            item = saved.item
+            if item and item.status == 'active':
+                posted_date = get_relative_time(item.created_at)
+                
+                result.append({
+                    'id': item.id,
+                    'title': item.title,
+                    'description': item.description,
+                    'price': item.price,
+                    'category': item.category,
+                    'images': item.images or [],
+                    'postedDate': posted_date,
+                    'seller': {
+                        'name': item.seller.full_name,
+                        'avatar': f"https://api.dicebear.com/7.x/avataaars/svg?seed={item.seller.full_name}"
+                    }
+                })
+        
+        return result
+    
+    except Exception as e:
+        print(f"ERROR in get_saved_items:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Create or get chat for an item
+@app.post("/marketplace/chats")
+async def create_or_get_chat(
+    chat_data: ChatCreate,
+    db: Session = Depends(get_db)
+):
+    try:
+        item = db.query(models.MarketplaceItem).filter(
+            models.MarketplaceItem.id == chat_data.item_id
+        ).first()
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+        
+        existing_chat = db.query(models.MarketplaceChat).filter(
+            models.MarketplaceChat.item_id == chat_data.item_id,
+            models.MarketplaceChat.buyer_id == chat_data.buyer_id
+        ).first()
+        
+        if existing_chat:
+            return {
+                'chat_id': existing_chat.id,
+                'exists': True
+            }
+        
+        # Create new chat
+        new_chat = models.MarketplaceChat(
+            item_id=chat_data.item_id,
+            buyer_id=chat_data.buyer_id,
+            seller_id=item.seller_id
+        )
+        
+        db.add(new_chat)
+        db.commit()
+        db.refresh(new_chat)
+        
+        return {
+            'chat_id': new_chat.id,
+            'exists': False
+        }
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in create_or_get_chat:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Get user's marketplace chats
+@app.get("/marketplace/chats/{user_id}")
+async def get_marketplace_chats(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    try:
+        chats = db.query(models.MarketplaceChat).filter(
+            or_(
+                models.MarketplaceChat.buyer_id == user_id,
+                models.MarketplaceChat.seller_id == user_id
+            )
+        ).order_by(models.MarketplaceChat.last_message_time.desc()).all()
+        
+        result = []
+        for chat in chats:
+            other_user = chat.seller if chat.buyer_id == user_id else chat.buyer
+            unread_count = db.query(models.MarketplaceMessage).filter(
+                and_(
+                    models.MarketplaceMessage.chat_id == chat.id,
+                    models.MarketplaceMessage.sender_id != user_id,
+                    models.MarketplaceMessage.is_read == False
+                )
+            ).count()
+            
+            time_ago = get_relative_time(chat.last_message_time) if chat.last_message_time else ''
+            
+            result.append({
+                'id': chat.id,
+                'itemId': chat.item_id,
+                'itemTitle': chat.item.title,
+                'itemImage': chat.item.images[0] if chat.item.images else None,
+                'itemPrice': chat.item.price,
+                'otherUser': {
+                    'id': other_user.id,
+                    'name': other_user.full_name,
+                    'avatar': f"https://api.dicebear.com/7.x/avataaars/svg?seed={other_user.full_name}"
+                },
+                'lastMessage': chat.last_message,
+                'lastMessageTime': time_ago,
+                'unreadCount': unread_count,
+                'isBuyer': chat.buyer_id == user_id
+            })
+        
+        return result
+    
+    except Exception as e:
+        print(f"ERROR in get_marketplace_chats:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Send message
+# Get chat messages
+# Send message - CORRECTED
+# Get chat messages - ADD THIS ENDPOINT
+@app.get("/marketplace/chats/{chat_id}/messages")
+async def get_chat_messages(
+    chat_id: int,
+    user_id: int = Query(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Getting messages for chat {chat_id}, user {user_id}")
+        
+        # Get chat info
+        chat = db.query(models.MarketplaceChat).filter(
+            models.MarketplaceChat.id == chat_id
+        ).first()
+        
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Verify user is part of this chat
+        if chat.buyer_id != user_id and chat.seller_id != user_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Get messages
+        messages = db.query(models.MarketplaceMessage).filter(
+            models.MarketplaceMessage.chat_id == chat_id
+        ).order_by(models.MarketplaceMessage.created_at).all()
+        
+        # Mark messages as read for the current user
+        db.query(models.MarketplaceMessage).filter(
+            models.MarketplaceMessage.chat_id == chat_id,
+            models.MarketplaceMessage.sender_id != user_id,
+            models.MarketplaceMessage.is_read == False
+        ).update({'is_read': True})
+        db.commit()
+        
+        # Format response
+        message_list = []
+        for msg in messages:
+            message_list.append({
+                'id': msg.id,
+                'senderId': msg.sender_id,
+                'message': msg.message,
+                'messageType': msg.message_type,
+                'offerAmount': msg.offer_amount,
+                'timestamp': msg.created_at.isoformat(),
+                'isRead': msg.is_read
+            })
+        
+        # Check if item exists (it might be deleted)
+        item_data = None
+        if chat.item_id and chat.item:
+            item_data = {
+                'id': chat.item.id,
+                'title': chat.item.title,
+                'image': chat.item.images[0] if chat.item.images else None,
+                'price': chat.item.price,
+                'status': chat.item.status
+            }
+        else:
+            # Item was deleted
+            item_data = {
+                'id': None,
+                'title': 'Item no longer available',
+                'image': None,
+                'price': 'N/A',
+                'status': 'deleted'
+            }
+        
+        return {
+            'chat': {
+                'id': chat.id,
+                'itemId': chat.item_id,
+                'itemTitle': item_data['title'],
+                'itemImage': item_data['image'],
+                'itemPrice': item_data['price'],
+                'itemStatus': item_data['status'],
+                'buyer': {
+                    'id': chat.buyer.id,
+                    'name': chat.buyer.full_name
+                },
+                'seller': {
+                    'id': chat.seller.id,
+                    'name': chat.seller.full_name
+                }
+            },
+            'messages': message_list
+        }
+    
+    except Exception as e:
+        print(f"ERROR in get_chat_messages:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
+# Send message in chat
+@app.post("/marketplace/chats/{chat_id}/messages")
+async def send_message(
+    chat_id: int,
+    message_data: MessageCreate,
+    db: Session = Depends(get_db)
+):
+    try:
+        print(f"Sending message to chat {chat_id}")
+        
+        # Verify chat exists
+        chat = db.query(models.MarketplaceChat).filter(
+            models.MarketplaceChat.id == chat_id
+        ).first()
+        
+        if not chat:
+            raise HTTPException(status_code=404, detail="Chat not found")
+        
+        # Verify sender is part of chat
+        if message_data.sender_id != chat.buyer_id and message_data.sender_id != chat.seller_id:
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        
+        # Create new message
+        new_message = models.MarketplaceMessage(
+            chat_id=chat_id,
+            sender_id=message_data.sender_id,
+            message=message_data.message,
+            message_type=message_data.message_type,
+            offer_amount=message_data.offer_amount
+        )
+        
+        db.add(new_message)
+        
+        # Update chat's last message
+        chat.last_message = message_data.message
+        chat.last_message_time = datetime.utcnow()
+        
+        db.commit()
+        db.refresh(new_message)
+        
+        print(f"Message sent successfully: {new_message.id}")
+        
+        return {
+            'id': new_message.id,
+            'senderId': new_message.sender_id,
+            'message': new_message.message,
+            'messageType': new_message.message_type,
+            'offerAmount': new_message.offer_amount,
+            'timestamp': new_message.created_at.isoformat(),
+            'isRead': new_message.is_read
+        }
+    
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR in send_message:")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
-
 
 # from fastapi import FastAPI, Depends, HTTPException, status
 # from fastapi.middleware.cors import CORSMiddleware

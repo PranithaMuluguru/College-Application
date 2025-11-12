@@ -255,11 +255,11 @@ const HomeScreen = ({ navigation, route }) => {
       onPress: navigateToBusSchedule
     },
     { 
-      name: 'Rewards', 
-      icon: 'gift-outline',
-      color: '#ef4444',
-      onPress: () => Alert.alert('Coming Soon', 'Rewards feature is under development') 
-    }
+    name: 'Marketplace', 
+    icon: 'storefront-outline',
+    color: '#ec4899',
+    onPress: () => navigation.navigate('Marketplace', { userId, userInfo })
+  },
   ];
 
   const navItems = [

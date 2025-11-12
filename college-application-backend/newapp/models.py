@@ -10,6 +10,9 @@ from sqlalchemy import (
     Date,
     ForeignKey,
     UniqueConstraint,
+    JSON,
+    or_,
+    and_,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
@@ -66,6 +69,8 @@ class User(Base):
     verification_otp = Column(String, nullable=True)
     otp_expiry = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -475,6 +480,69 @@ class DiscussionParticipant(Base):
     __table_args__ = (
         UniqueConstraint('discussion_id', 'user_id', name='unique_participant'),
     )
+# models.py
+
+
+class MarketplaceItem(Base):
+    __tablename__ = 'marketplace_items'
+    
+    id = Column(Integer, primary_key=True)
+    seller_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    title = Column(String(200), nullable=False)
+    description = Column(Text, nullable=False)
+    price = Column(String(50), nullable=False)
+    category = Column(String(50), nullable=False)
+    condition = Column(String(50), nullable=False)
+    location = Column(String(100), nullable=False)
+    images = Column(JSON, default=[])
+    status = Column(String(20), default='active')
+    views = Column(Integer, default=0)
+    is_negotiable = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    seller = relationship('User', backref='marketplace_items')
+    saved_by = relationship('SavedItem', backref='item', cascade='all, delete-orphan')
+    
+class SavedItem(Base):
+    __tablename__ = 'saved_items'
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('marketplace_items.id'), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship('User', backref='saved_items')
+
+class MarketplaceChat(Base):
+    __tablename__ = 'marketplace_chats'
+    
+    id = Column(Integer, primary_key=True)
+    item_id = Column(Integer, ForeignKey('marketplace_items.id'), nullable=True)
+    buyer_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    seller_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    last_message = Column(Text)
+    last_message_time = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    item = relationship('MarketplaceItem', backref='chats')
+    buyer = relationship('User', foreign_keys=[buyer_id], backref='buyer_chats')
+    seller = relationship('User', foreign_keys=[seller_id], backref='seller_chats')
+    messages = relationship('MarketplaceMessage', backref='chat', cascade='all, delete-orphan')
+
+class MarketplaceMessage(Base):
+    __tablename__ = 'marketplace_messages'
+    
+    id = Column(Integer, primary_key=True)
+    chat_id = Column(Integer, ForeignKey('marketplace_chats.id'), nullable=False)
+    sender_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    message = Column(Text, nullable=False)
+    message_type = Column(String(20), default='text')
+    offer_amount = Column(String(50))
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    sender = relationship('User', backref='marketplace_messages')
 
 # Update User model with new relationships
 # Add these to your existing User class:

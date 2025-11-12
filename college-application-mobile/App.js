@@ -31,6 +31,17 @@ import FollowersScreen from './src/screens/social/FollowersScreen';
 import FollowingScreen from './src/screens/social/FollowingScreen';
 //////////////////////////new imports above//////////////////////////
 
+/////////market screen imports/////////
+import MarketplaceChatListScreen from './src/screens/market/MarketplaceChatListScreen';
+import SavedItemsScreen from './src/screens/market/SavedItemsScreen'; 
+import MarketplaceScreen from './src/screens/market/MarketplaceScreen';
+import MarketplaceChatScreen from './src/screens/market/MarketplaceChatScreen';
+import ItemDetailScreen from './src/screens/market/ItemDetailScreen';
+import CreateListingScreen from './src/screens/market/CreateListingScreen';
+import MyListingsScreen from './src/screens/market/MyListingsScreen.js';
+import EditListingScreen from './src/screens/market/EditListingScreen';
+
+/////////market screen imports end/////////
 import UserSearchScreen from './src/screens/social/UserSearchScreen';
 
 
@@ -86,6 +97,34 @@ export default function App() {
           component={BusScheduleScreen} 
           options={{ headerShown: false }}
         />
+        <Stack.Screen name="Marketplace" component={MarketplaceScreen} options={{ headerShown: false }} />
+<Stack.Screen name="ItemDetail" component={ItemDetailScreen}options={{ headerShown: false }} />
+<Stack.Screen name="CreateListing" component={CreateListingScreen}options={{ headerShown: false }} />
+<Stack.Screen 
+  name="MyListings" 
+  component={MyListingsScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="MarketplaceChat" 
+  component={MarketplaceChatScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="MarketplaceChatList" 
+  component={MarketplaceChatListScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="SavedItems" 
+  component={SavedItemsScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="EditListing" 
+  component={EditListingScreen}
+  options={{ headerShown: false }}
+/>
       </Stack.Navigator>
     </NavigationContainer>
   );
