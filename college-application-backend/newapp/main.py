@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 import logging
 from fastapi import FastAPI, Depends, HTTPException, status,Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,18 +21,35 @@ from newapp import models
 from newapp.ai_service import AIAssistant
 from newapp.web_scraper import scrape_iitpkd_website
 
+# Add to your main.py
+from newapp.admin_auth import router as admin_auth_router
+from newapp.create_default_admin import create_default_admin
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)  # Add this line!
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="College App API", version="1.0.0")
-@app.on_event("startup")
-def create_tables():
-    """Create all tables if they don't exist"""
+# Lifespan events
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🚀 Starting up...")
     models.Base.metadata.create_all(bind=engine)
-    print("✅ All database tables created/verified")
+    
+    from newapp.create_default_admin import create_default_admin
+    create_default_admin()
+    
+    yield
+    print("🛑 Shutting down...")
+
+app = FastAPI(title="College App API", version="1.0.0",lifespan = lifespan)
+
+# app.include_router(admin_router)
+
+
+
+
 
 # CORS middleware
 app.add_middleware(
@@ -41,13 +59,62 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT settings
 SECRET_KEY = "your-secret-key-here-change-in-production"
 ALGORITHM = "HS256"
+
+
+
+
+
+@app.get("/")
+async def root():
+    return {"message": "College App API is running"}
+
+
+# Debug routes on startup
+
+app.include_router(admin_auth_router)
+
+
+# Import router and verify it exists
+print("\n🔍 Checking admin_auth router...")
+try:
+    from newapp import admin_auth
+    print(f"✓ Module imported: {admin_auth}")
+    print(f"✓ Router object: {admin_auth.router}")
+    print(f"✓ Router prefix: {admin_auth.router.prefix}")
+    print(f"✓ Number of routes: {len(admin_auth.router.routes)}")
+    
+    # Include the router
+    app.include_router(admin_auth.router)
+    print("✓ Router included successfully\n")
+    
+except Exception as e:
+    print(f"✗ Failed to import/include router: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Debug: Print all routes
+@app.on_event("startup")
+async def print_routes():
+    print("\n" + "="*70)
+    print("📋 REGISTERED ROUTES:")
+    print("="*70)
+    for route in app.routes:
+        if hasattr(route, 'methods') and hasattr(route, 'path'):
+            methods = ', '.join(route.methods)
+            print(f"  {methods:8} {route.path}")
+    print("="*70 + "\n")
+
+
+
+@app.post("/admin/auth/login")
+async def test_inline_login(data: dict):
+    return {"message": "Inline route works!", "data": data}
 
 # Database dependency
 def get_db():
@@ -5090,9 +5157,21 @@ async def send_message(
         print(f"ERROR in send_message:")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+# Add this function
+def initialize_admin():
+    """Initialize default admin on startup"""
+    try:
+        create_default_admin()
+    except Exception as e:
+        print(f"Admin initialization failed: {e}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+else:
+    # Auto-create admin when module is imported
+    initialize_admin()
 
 # from fastapi import FastAPI, Depends, HTTPException, status
 # from fastapi.middleware.cors import CORSMiddleware

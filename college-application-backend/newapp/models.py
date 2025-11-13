@@ -69,6 +69,7 @@ class User(Base):
     verification_otp = Column(String, nullable=True)
     otp_expiry = Column(DateTime, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_active = Column(Boolean, default=True)
 
     
     updated_at = Column(
@@ -568,3 +569,39 @@ class MarketplaceMessage(Base):
     # Notifications
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 """
+
+
+
+
+############################ ADMINN MODELS BELOW THIS LINE ############################
+
+# Add to your existing models.py
+
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    admin_level = Column(String, default="admin")  # admin, super_admin
+    permissions = Column(JSON, default={})  # Custom permissions
+    created_by = Column(Integer, ForeignKey("admin_users.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_login = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    user = relationship("User", backref="admin_profile")
+    created_by_admin = relationship("AdminUser", remote_side=[id], backref="created_admins")
+
+class AdminActivityLog(Base):
+    __tablename__ = "admin_activity_logs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    admin_id = Column(Integer, ForeignKey("admin_users.id"), nullable=False)
+    action = Column(String, nullable=False)
+    target_type = Column(String, nullable=True)  # user, post, marketplace, etc.
+    target_id = Column(Integer, nullable=True)
+    details = Column(JSON, nullable=True)
+    ip_address = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    admin = relationship("AdminUser", backref="activity_logs")

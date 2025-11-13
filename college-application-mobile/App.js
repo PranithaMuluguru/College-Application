@@ -44,6 +44,12 @@ import EditListingScreen from './src/screens/market/EditListingScreen';
 /////////market screen imports end/////////
 import UserSearchScreen from './src/screens/social/UserSearchScreen';
 
+//////// admin screens ////////
+import AdminLoginScreen from './src/screens/admin/AdminLoginScreen';
+import AdminDashboardScreen from './src/screens/admin/AdminDashboardScreen';
+import AdminManagementScreen from './src/screens/admin/AdminManagementScreen';
+//////// admin screens end //////// 
+
 
 const Stack = createNativeStackNavigator();
 
@@ -124,6 +130,22 @@ export default function App() {
   name="EditListing" 
   component={EditListingScreen}
   options={{ headerShown: false }}
+/>
+
+<Stack.Screen 
+  name="AdminLogin" 
+  component={AdminLoginScreen}
+  options={{ headerShown: false }}  // Add this
+/>
+<Stack.Screen 
+  name="AdminDashboard" 
+  component={AdminDashboardScreen}
+  options={{ headerShown: false }}  // Add this
+/>
+<Stack.Screen 
+  name="AdminManagement" 
+  component={AdminManagementScreen}
+  options={{ headerShown: false }}  // Add this
 />
       </Stack.Navigator>
     </NavigationContainer>

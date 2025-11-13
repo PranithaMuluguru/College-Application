@@ -1,9 +1,13 @@
+// LoginScreen.js - FIXED VERSION
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Alert } from 'react-native';
 import axios from 'axios';
+import { Ionicons } from '@expo/vector-icons'; // ADD THIS IMPORT
 
 import API_URL from '../config';
+
 const API_BASE_URL = API_URL;
+
 const LoginScreen = ({ navigation }) => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -112,6 +116,16 @@ const LoginScreen = ({ navigation }) => {
         </Text>
       </TouchableOpacity>
 
+      {/* Admin Login Button */}
+      <TouchableOpacity 
+        style={styles.adminLoginButton}
+        onPress={() => navigation.navigate('AdminLogin')}
+        disabled={isLoading}
+      >
+        <Ionicons name="shield-checkmark-outline" size={16} color="#8b5cf6" />
+        <Text style={styles.adminLoginText}>Admin Login</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity 
         style={styles.registerButton} 
         onPress={handleRegister}
@@ -179,6 +193,23 @@ const styles = StyleSheet.create({
     color: 'white', 
     fontWeight: 'bold', 
     fontSize: 16 
+  },
+  adminLoginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#8b5cf6',
+    borderRadius: 10,
+    backgroundColor: 'white',
+  },
+  adminLoginText: {
+    color: '#8b5cf6',
+    fontSize: 14,
+    fontWeight: '600',
   },
   registerButton: {
     alignItems: 'center',
