@@ -30,6 +30,9 @@ import NotificationsScreen from './src/screens/notifications/NotificationsScreen
 import FollowersScreen from './src/screens/social/FollowersScreen';
 import FollowingScreen from './src/screens/social/FollowingScreen';
 //////////////////////////new imports above//////////////////////////
+import SettingsScreen from './src/screens/social/SettingsScreen.js';
+import EditProfileScreen from './src/screens/social/EditProfileScreen.js';
+
 
 /////////market screen imports/////////
 import MarketplaceChatListScreen from './src/screens/market/MarketplaceChatListScreen';
@@ -72,6 +75,16 @@ import CourseGroupScreen from './src/screens/courses/CourseGroupScreen.js';
 import StudyPreferencesScreen from './src/screens/courses/StudyPreferencesScreen.js';
 
 
+//////////// add wellness ////////////
+import WellnessHomeScreen from './src/screens/wellness/WellnessHomeScreen.js';
+import WellnessCheckInScreen from './src/screens/wellness/WellnessCheckInScreen.js';
+import RiskAssessmentScreen from './src/screens/wellness/RiskAssessmentScreen.js';
+import CounselorFormScreen from './src/screens/wellness/CounselorFormScreen.js';
+import MeditationScreen from './src/screens/wellness/MeditationScreen.js';
+import WellnessHistoryScreen from './src/screens/wellness/WellnessHistoryScreen';
+//////////// add wellness end ////////////
+import CampusMap from './src/screens/maps/CampusMaps.js';
+
 const Stack = createNativeStackNavigator();
 
 export default function App() {
@@ -100,6 +113,7 @@ export default function App() {
         />
         <Stack.Screen name="MessMenuScreen" component={MessMenuScreen} />
         <Stack.Screen name="Academics" component={AcademicsScreen} />
+        
         <Stack.Screen name="Sports" component={SportsScreen} />
         <Stack.Screen name="Campus" component={CampusScreen} />
         {/* <Stack.Screen name="Clubs" component={ClubsScreen} /> */}
@@ -251,6 +265,51 @@ export default function App() {
 <Stack.Screen 
   name="studyPreferences" 
   component={StudyPreferencesScreen}
+  options={{ headerShown: false }}
+/>
+      <Stack.Screen 
+        name="WellnessHome" 
+        component={WellnessHomeScreen} 
+        options={{ title: 'Wellness', headerShown: false }}
+      />
+      <Stack.Screen
+        name="WellnessCheckIn" 
+        component={WellnessCheckInScreen} 
+        options={{ title: 'Daily Check-in' }}
+      />
+      <Stack.Screen
+        name="RiskAssessment" 
+        component={RiskAssessmentScreen} 
+        options={{ title: 'Risk Assessment' }}
+      />
+      <Stack.Screen
+        name="CounselorForm" 
+        component={CounselorFormScreen} 
+        options={{ title: 'Contact Counselor' }}
+      />
+      <Stack.Screen
+        name="Meditation" 
+        component={MeditationScreen} 
+        options={{ title: 'Meditation' }}
+      />
+      <Stack.Screen 
+  name="WellnessHistory" 
+  component={WellnessHistoryScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="Settings" 
+  component={SettingsScreen} 
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="EditProfile" 
+  component={EditProfileScreen} 
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="CampusMap" 
+  component={CampusMap} 
   options={{ headerShown: false }}
 />
       

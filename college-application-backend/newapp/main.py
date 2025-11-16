@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
-from fastapi import FastAPI, Depends, HTTPException, status,Query
+from fastapi import FastAPI, Depends, HTTPException, status,Query,Body
+from datetime import datetime
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr,validator
 from datetime import datetime, timedelta, date
@@ -13,6 +14,8 @@ import string
 from passlib.context import CryptContext
 import jwt
 from difflib import SequenceMatcher
+import math
+from .models import User, UserLocation
 
 import traceback
 
@@ -25,6 +28,8 @@ from newapp.web_scraper import scrape_iitpkd_website
 from newapp.admin_auth import router as admin_auth_router
 from newapp.create_default_admin import create_default_admin
 from newapp.study_buddy_routes import router as study_buddy_router
+from newapp.wellness_routes import wellness_bp
+from newapp.maps import router as maps_router
 
 # Import new routers
 from . import course_routes
@@ -117,8 +122,9 @@ app.include_router(study_buddy_routes.router)
 app.include_router(club_routes_router)  # /clubs
 app.include_router(admin_router)  # /admin
 app.include_router(study_buddy_router)  # /study-buddy
+# app.include_router(maps_router)  # /maps
 
-
+app.include_router(wellness_bp, prefix="/wellness", tags=["wellness"])
 
 
 # Import router and verify it exists
@@ -416,6 +422,180 @@ def fix_todo_table_schema(db: Session):
     except Exception as e:
         print(f"Error fixing TodoItem table schema: {e}")
         db.rollback()
+
+# Maps
+class LocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: str = None
+
+@app.post("/users/{user_id}/location")
+async def update_user_location(
+    user_id: int,
+    location: LocationUpdate,
+    db: Session = Depends(get_db)
+):
+    """Update user's current location"""
+    try:
+        # Check if user exists
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Check if location record exists
+        location_record = db.query(UserLocation).filter(
+            UserLocation.user_id == user_id
+        ).first()
+        
+        if location_record:
+            # Update existing location
+            location_record.latitude = location.latitude
+            location_record.longitude = location.longitude
+            location_record.last_updated = datetime.utcnow()
+        else:
+            # Create new location record
+            location_record = UserLocation(
+                user_id=user_id,
+                latitude=location.latitude,
+                longitude=location.longitude,
+                last_updated=datetime.utcnow()
+            )
+            db.add(location_record)
+        
+        db.commit()
+        db.refresh(location_record)
+        
+        return {
+            "message": "Location updated successfully",
+            "location": {
+                "latitude": location_record.latitude,
+                "longitude": location_record.longitude,
+                "last_updated": location_record.last_updated.isoformat()
+            }
+        }
+    except Exception as e:
+        db.rollback()
+        print(f"Error updating location: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def calculate_distance(lat1, lon1, lat2, lon2):
+    """Calculate distance between two coordinates using Haversine formula"""
+    R = 6371000  # Earth's radius in meters
+    
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+    
+    a = (math.sin(delta_phi / 2) ** 2 +
+         math.cos(phi1) * math.cos(phi2) *
+         math.sin(delta_lambda / 2) ** 2)
+    
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    return R * c
+
+
+@app.get("/users/nearby/{user_id}")
+async def get_nearby_users(
+    user_id: int,
+    latitude: float,
+    longitude: float,
+    radius: int = 500,  # Default 500 meters
+    db: Session = Depends(get_db)
+):
+    """Get users within specified radius"""
+    try:
+        # Get all users with recent location updates (within last 10 minutes)
+        cutoff_time = datetime.utcnow() - timedelta(minutes=10)
+        
+        # Query for nearby users
+        all_locations = db.query(UserLocation, User).join(
+            User, UserLocation.user_id == User.id
+        ).filter(
+            UserLocation.user_id != user_id,
+            UserLocation.last_updated >= cutoff_time,
+            User.is_active == True
+        ).all()
+        
+        nearby_users = []
+        
+        for location, user in all_locations:
+            distance = calculate_distance(
+                latitude,
+                longitude,
+                location.latitude,
+                location.longitude
+            )
+            
+            if distance <= radius:
+                nearby_users.append({
+                    "id": user.id,
+                    "full_name": user.full_name,
+                    "department": user.department,
+                    "year": user.year,
+                    "college_id": user.college_id,
+                    "latitude": location.latitude,
+                    "longitude": location.longitude,
+                    "last_seen": location.last_updated.isoformat(),
+                    "distance": round(distance, 2)
+                })
+        
+        # Sort by distance
+        nearby_users.sort(key=lambda x: x['distance'])
+        
+        return nearby_users
+        
+    except Exception as e:
+        print(f"Error fetching nearby users: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Add this endpoint temporarily for testing
+@app.post("/users/seed-test-locations")
+async def seed_test_locations(db: Session = Depends(get_db)):
+    """Seed some test users with nearby locations (REMOVE IN PRODUCTION)"""
+    try:
+        # Get all users
+        users = db.query(User).filter(User.is_active == True).all()
+        
+        # Base location (adjust to your campus)
+        base_lat = 10.808344
+        base_lon = 76.741201
+        
+        for i, user in enumerate(users):
+            # Add slight random offset (within ~100m)
+            lat_offset = (i * 0.0001) - 0.0002
+            lon_offset = (i * 0.0001) - 0.0002
+            
+            location = db.query(UserLocation).filter(
+                UserLocation.user_id == user.id
+            ).first()
+            
+            if location:
+                location.latitude = base_lat + lat_offset
+                location.longitude = base_lon + lon_offset
+                location.last_updated = datetime.utcnow()
+            else:
+                location = UserLocation(
+                    user_id=user.id,
+                    latitude=base_lat + lat_offset,
+                    longitude=base_lon + lon_offset,
+                    last_updated=datetime.utcnow()
+                )
+                db.add(location)
+        
+        db.commit()
+        return {"message": f"Seeded {len(users)} users with test locations"}
+        
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
 
 # ================ MESS MENU DATA POPULATION ================
 def populate_mess_menu_data(db: Session):
@@ -1013,6 +1193,82 @@ async def login(login_data: UserLogin, db: Session = Depends(get_db)):
             "year": db_user.year,
             "phone_number": db_user.phone_number
         }
+    }
+
+
+# Logout endpoint
+@app.post("/logout/")
+async def logout():
+    """
+    Logout endpoint - clears client-side token
+    Since we're using stateless JWT, we just return success
+    Client should clear AsyncStorage
+    """
+    return {
+        "message": "Logged out successfully",
+        "success": True
+    }
+
+
+# PUT /users/{user_id} - Update user profile
+@app.put("/users/{user_id}")
+async def update_user_profile(
+    user_id: int,
+    full_name: str = Body(...),
+    phone_number: Optional[str] = Body(None),
+    year: int = Body(...),
+    db: Session = Depends(get_db)
+):
+    """Update editable user fields only"""
+    
+    # Validation
+    if year < 1 or year > 4:
+        raise HTTPException(400, "Year must be between 1 and 4")
+    
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    # Update only allowed fields
+    user.full_name = full_name.strip()
+    user.phone_number = phone_number.strip() if phone_number else None
+    user.year = year
+    user.updated_at = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(user)
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "college_id": user.college_id,
+        "full_name": user.full_name,
+        "department": user.department,
+        "year": user.year,
+        "phone_number": user.phone_number,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at
+    }
+
+
+# GET /users/{user_id} - Fetch fresh user data
+@app.get("/users/{user_id}")
+async def get_user_profile(user_id: int, db: Session = Depends(get_db)):
+    """Get user profile with latest data"""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, "User not found")
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "college_id": user.college_id,
+        "full_name": user.full_name,
+        "department": user.department,
+        "year": user.year,
+        "phone_number": user.phone_number,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at
     }
 
 # ================ TODO ENDPOINTS ================
@@ -1927,6 +2183,130 @@ async def refresh_knowledge_base(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ================ ATTENDANCE ENDPOINTS ================
+from datetime import datetime, timedelta, time as dt_time
+
+@app.get("/notifications/upcoming-class/{user_id}")
+async def get_upcoming_class_notification(
+    user_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get notification for class starting within 15 minutes"""
+    try:
+        now = datetime.now()
+        current_day = now.strftime("%A")
+        current_time = now.time()
+        
+        # Get time 15 minutes from now
+        time_15_min_later = (now + timedelta(minutes=15)).time()
+        
+        # Find classes for today
+        today_classes = db.query(models.TimetableEntry).filter(
+            models.TimetableEntry.user_id == user_id,
+            models.TimetableEntry.day_of_week == current_day
+        ).all()
+        
+        upcoming_class = None
+        
+        for class_entry in today_classes:
+            # Parse class start time
+            class_start_time = datetime.strptime(class_entry.start_time, "%H:%M").time()
+            
+            # Check if class starts within next 15 minutes
+            if current_time <= class_start_time <= time_15_min_later:
+                # Check today's attendance status
+                today_date = now.date()
+                attendance = db.query(models.AttendanceRecord).filter(
+                    models.AttendanceRecord.user_id == user_id,
+                    models.AttendanceRecord.timetable_entry_id == class_entry.id,
+                    models.AttendanceRecord.date == today_date
+                ).first()
+                
+                # Calculate minutes until class
+                time_diff = datetime.combine(now.date(), class_start_time) - now
+                minutes_until = int(time_diff.total_seconds() / 60)
+                
+                upcoming_class = {
+                    "has_upcoming": True,
+                    "timetable_entry_id": class_entry.id,
+                    "course_name": class_entry.course_name,
+                    "teacher": class_entry.teacher,
+                    "room_number": class_entry.room_number,
+                    "start_time": class_entry.start_time,
+                    "end_time": class_entry.end_time,
+                    "minutes_until": minutes_until,
+                    "already_marked": attendance is not None,
+                    "current_status": attendance.status if attendance else None,
+                    "message": f"{class_entry.course_name} starts in {minutes_until} minutes!"
+                }
+                break
+        
+        if not upcoming_class:
+            return {
+                "has_upcoming": False,
+                "message": "No classes starting soon"
+            }
+        
+        return upcoming_class
+        
+    except Exception as e:
+        print(f"Error getting upcoming class: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error getting upcoming class notification"
+        )
+
+
+@app.post("/attendance/quick-mark/{user_id}")
+async def quick_mark_attendance(
+    user_id: int,
+    timetable_entry_id: int,
+    status: str,
+    db: Session = Depends(get_db)
+):
+    """Quick mark attendance for today's class"""
+    try:
+        today = datetime.now().date()
+        
+        # Check if already marked
+        existing = db.query(models.AttendanceRecord).filter(
+            models.AttendanceRecord.user_id == user_id,
+            models.AttendanceRecord.timetable_entry_id == timetable_entry_id,
+            models.AttendanceRecord.date == today
+        ).first()
+        
+        if existing:
+            existing.status = status
+            existing.updated_at = datetime.utcnow()
+            db.commit()
+            db.refresh(existing)
+            return {
+                "success": True,
+                "message": f"Attendance updated to {status}",
+                "record": existing
+            }
+        else:
+            new_record = models.AttendanceRecord(
+                user_id=user_id,
+                timetable_entry_id=timetable_entry_id,
+                date=today,
+                status=status
+            )
+            db.add(new_record)
+            db.commit()
+            db.refresh(new_record)
+            return {
+                "success": True,
+                "message": f"Attendance marked as {status}",
+                "record": new_record
+            }
+            
+    except Exception as e:
+        print(f"Error quick marking attendance: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error marking attendance"
+        )
 @app.get("/attendance/{user_id}")
 async def get_attendance_records(
     user_id: int,

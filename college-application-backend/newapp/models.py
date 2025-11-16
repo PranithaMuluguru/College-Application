@@ -78,7 +78,12 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_active = Column(Boolean, default=True)
 
-    
+    wellness_entries = relationship("WellnessEntry", back_populates="user")
+    daily_analyses = relationship("DailyAnalysis", back_populates="user")
+    behavior_patterns = relationship("BehaviorPattern", back_populates="user")
+    counselor_forms = relationship("CounselorForm", back_populates="user")
+    user_locations = relationship("UserLocation", back_populates="user")
+
     updated_at = Column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
@@ -868,3 +873,236 @@ class StudyGoalParticipant(Base):
 # Add ONLY this line to your existing User class:
 # Inside class User(Base):
 #     study_preference = relationship("StudyPreference", back_populates="user", uselist=False)
+
+
+# models/wellness_models.py
+
+    
+    # Relationships
+   
+
+
+class WellnessEntry(Base):
+    """Daily wellness tracking - mood, stress, energy, sleep"""
+    __tablename__ = "wellness_entries"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    
+    # Wellness metrics (1-5 scale typically)
+    mood_score = Column(Float, nullable=False)  # 1-5
+    stress_level = Column(Float, nullable=False)  # 1-10
+    energy_level = Column(Float, nullable=False)  # 1-10
+    sleep_hours = Column(Float)  # How many hours slept
+    sleep_quality = Column(Float)  # 1-5
+    
+    # Optional notes
+    notes = Column(Text)
+    triggers = Column(Text)  # Comma-separated
+    
+    # Relationships
+    user = relationship("User", back_populates="wellness_entries")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, 
+                       onupdate=datetime.utcnow)
+
+
+class DailyAnalysis(Base):
+    """AI-generated daily behavior analysis"""
+    __tablename__ = "daily_analyses"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    analysis_date = Column(Date, nullable=False)
+    
+    # Analysis components
+    predicted_mood = Column(Float)  # ML predicted mood for day
+    predicted_stress = Column(Float)
+    predicted_energy = Column(Float)
+    
+    # Behavioral insights
+    sentiment_score = Column(Float)  # -1 to 1 from chat analysis
+    chat_activity_level = Column(String(50))  # high/medium/low
+    message_count = Column(Integer)
+    avg_message_sentiment = Column(Float)
+    
+    # Academic impact
+    classes_today = Column(Integer)  # Class load
+    todos_pending = Column(Integer)
+    academic_stress = Column(Float)  # Calculated
+    
+    # Factors affecting behavior
+    contributing_factors = Column(Text)  # JSON array
+    recommendations = Column(Text)  # JSON array
+    risk_level = Column(String(50))  # low/medium/high
+    
+    # Full analysis narrative
+    analysis_narrative = Column(Text)
+    
+    # Relationships
+    user = relationship("User", back_populates="daily_analyses")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class BehaviorPattern(Base):
+    """Monthly/weekly patterns in user behavior"""
+    __tablename__ = "behavior_patterns"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Time period
+    period_start = Column(Date, nullable=False)
+    period_end = Column(Date, nullable=False)
+    period_type = Column(String(20))  # weekly/monthly
+    
+    # Patterns identified
+    best_day = Column(String(10))  # Day of week with best mood
+    worst_day = Column(String(10))
+    
+    avg_mood = Column(Float)
+    avg_stress = Column(Float)
+    avg_energy = Column(Float)
+    avg_sleep = Column(Float)
+    
+    # Correlations (stored as JSON for flexibility)
+    mood_stress_correlation = Column(Float)  # -1 to 1
+    sleep_mood_correlation = Column(Float)
+    academic_stress_correlation = Column(Float)
+    social_activity_correlation = Column(Float)
+    
+    # Insights
+    pattern_description = Column(Text)  # "Your mood peaks on Fridays..."
+    
+    # Relationships
+    user = relationship("User", back_populates="behavior_patterns")
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatAnalysis(Base):
+    """Analysis of chat messages for sentiment & behavior"""
+    __tablename__ = "chat_analyses"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Chat metadata
+    chat_group_id = Column(Integer)  # From your existing ChatGroup
+    message_count = Column(Integer)
+    analysis_date = Column(Date, nullable=False)
+    
+    # Sentiment analysis
+    overall_sentiment = Column(Float)  # -1 to 1
+    positive_ratio = Column(Float)  # 0-1
+    negative_ratio = Column(Float)  # 0-1
+    neutral_ratio = Column(Float)  # 0-1
+    
+    # Behavioral indicators
+    activity_level = Column(String(50))  # high/medium/low
+    response_time_avg = Column(Float)  # seconds
+    engagement_score = Column(Float)  # 0-100
+    
+    # Detected patterns
+    tone = Column(String(100))  # professional/casual/stressed/happy
+    key_emotions = Column(Text)  # JSON: ["stressed", "excited"]
+    topics_discussed = Column(Text)  # JSON array
+    
+    # Flags
+    stress_indicators = Column(Boolean, default=False)
+    anxiety_indicators = Column(Boolean, default=False)
+    withdrawal = Column(Boolean, default=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class CounselorForm(Base):
+    """Form submissions from mental health counseling page"""
+    __tablename__ = "counselor_forms"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    name = Column(String(255))
+    email = Column(String(255))
+    subject = Column(String(500))
+    message = Column(Text, nullable=False)
+    
+    # Processing
+    processed = Column(Boolean, default=False)
+    responded = Column(Boolean, default=False)
+    response_message = Column(Text)
+    
+    # Priority assignment
+    priority = Column(String(20))  # low/medium/high/urgent
+    category = Column(String(100))  # stress/anxiety/depression/other
+    
+    user = relationship("User", back_populates="counselor_forms")
+    
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime)
+
+
+class RiskAssessment(Base):
+    """Mental health risk assessment results"""
+    __tablename__ = "risk_assessments"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    assessment_date = Column(DateTime, default=datetime.utcnow)
+    
+    # Risk indicators
+    social_withdrawal_score = Column(Float)  # 0-100
+    sleep_deterioration_score = Column(Float)  # 0-100
+    academic_decline_score = Column(Float)  # 0-100
+    mood_volatility_score = Column(Float)  # 0-100
+    stress_accumulation_score = Column(Float)  # 0-100
+    
+    # Overall risk
+    overall_risk_level = Column(String(20))  # low/medium/high/critical
+    risk_percentage = Column(Float)  # 0-100
+    
+    # Recommendations
+    recommended_actions = Column(Text)  # JSON array
+    counselor_contact_recommended = Column(Boolean)
+    immediate_intervention = Column(Boolean)
+    
+    # Alert details
+    triggered_alerts = Column(Text)  # JSON array
+
+
+class StudyBuddyMatch(Base):
+    """Study buddy matching results"""
+    __tablename__ = "study_buddy_matches"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    matched_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    course_code = Column(String(20))
+    match_score = Column(Float)  # 0-100
+    
+    # Compatibility details
+    schedule_compatibility = Column(Float)  # 0-100
+    study_habit_similarity = Column(Float)  # 0-100
+    complementary_skills = Column(Text)  # JSON array
+    common_availability = Column(Text)  # JSON array ["evenings", "weekends"]
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    status = Column(String(20), default="pending")  # pending/accepted/declined
+
+
+class UserLocation(Base):
+    __tablename__ = "user_locations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    last_updated = Column(DateTime, default=datetime.utcnow)
+    
+    # Add the relationship with back_populates
+    user = relationship("User", back_populates="user_locations")

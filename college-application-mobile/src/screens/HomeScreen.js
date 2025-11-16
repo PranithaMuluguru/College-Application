@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -9,18 +9,22 @@ import {
   Alert, 
   TextInput,
   Modal,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import FloatingAI from './FloatingAI';
+import UpcomingClassBanner from './UpcomingClassBanner';
 
 import API_URL from '../config';
 
 const HomeScreen = ({ navigation, route }) => {
   const userData = route.params?.user || {};
   const userId = userData?.id || route.params?.userId;
-  const userInfo = route.params?.userInfo || userData;
   const token = route.params?.token;
+  
+  // Changed to state so it can be updated on refresh
+  const [userInfo, setUserInfo] = useState(route.params?.userInfo || userData);
   
   console.log('HomeScreen - User Data:', { userId, userInfo });
   
@@ -38,6 +42,9 @@ const HomeScreen = ({ navigation, route }) => {
   const [showAddTodo, setShowAddTodo] = useState(false);
   const [newTodo, setNewTodo] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('medium');
+
+  // Add refreshing state
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     const updateDateTime = () => {
@@ -124,6 +131,27 @@ const HomeScreen = ({ navigation, route }) => {
       console.error('Error fetching todos:', error);
     }
   };
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Fetch fresh user data
+      const userResponse = await axios.get(`${API_URL}/users/${userId}`);
+      setUserInfo(userResponse.data);
+      
+      // Refresh other data
+      await fetchTodaysClasses();
+      await fetchTodos();
+      
+      console.log('Data refreshed successfully');
+    } catch (error) {
+      console.error('Refresh error:', error);
+      Alert.alert('Error', 'Could not refresh data');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [userId]);
 
   const addTodo = async () => {
     if (!newTodo.trim()) {
@@ -235,12 +263,16 @@ const HomeScreen = ({ navigation, route }) => {
     navigation.navigate('BusSchedule');
   };
 
+  const navigateToMaps = () => {
+    navigation.navigate('CampusMap', { userId, userInfo });
+  };
+  
   const quickAccessItems = [
     { 
-      name: 'Academics', 
-      icon: 'school-outline',
+      name: 'Nearby', 
+      icon: 'location-outline',
       color: '#8b5cf6',
-      onPress: navigateToAcademics
+      onPress: navigateToMaps
     },
     { 
       name: 'Mess Menu', 
@@ -255,11 +287,11 @@ const HomeScreen = ({ navigation, route }) => {
       onPress: navigateToBusSchedule
     },
     { 
-    name: 'Marketplace', 
-    icon: 'storefront-outline',
-    color: '#ec4899',
-    onPress: () => navigation.navigate('Marketplace', { userId, userInfo })
-  },
+      name: 'Marketplace', 
+      icon: 'storefront-outline',
+      color: '#ec4899',
+      onPress: () => navigation.navigate('Marketplace', { userId, userInfo })
+    },
   ];
 
   const navItems = [
@@ -275,15 +307,20 @@ const HomeScreen = ({ navigation, route }) => {
       onPress: navigateToAcademics
     },
     { 
+      name: 'Wellness',
+      icon: 'heart-outline',
+      onPress: () => navigation.navigate('WellnessHome', { userId })
+    },
+    { 
       name: 'Chat', 
       icon: 'chatbubble-outline',
-      onPress: () => navigation.navigate('ChatList', { userId, userInfo }) // Changed from MessMenu
+      onPress: () => navigation.navigate('ChatList', { userId, userInfo })
     },
-   { 
-    name: 'Clubs', 
-    icon: 'people-outline', // or use 'globe-outline'
-    onPress: () => navigation.navigate('Clubs', { userId, userInfo, token })
-  },
+    { 
+      name: 'Clubs', 
+      icon: 'people-outline',
+      onPress: () => navigation.navigate('Clubs', { userId, userInfo, token })
+    },
   ];
 
   const renderNextClass = () => {
@@ -533,18 +570,41 @@ const HomeScreen = ({ navigation, route }) => {
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#1a1a1a" />
 
+      {/* Updated Header with Settings Navigation */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>{greeting}</Text>
           <Text style={styles.userName}>{userInfo?.full_name?.split(' ')[0] || 'Student'}</Text>
           <Text style={styles.dateTime}>{currentDate} • {currentTime}</Text>
         </View>
-        <TouchableOpacity style={styles.avatar} activeOpacity={0.8}>
+        <TouchableOpacity 
+          style={styles.avatar} 
+          activeOpacity={0.8}
+          onPress={() => navigation.navigate('Settings', { userId, userInfo })}
+        >
           <Text style={styles.avatarText}>{firstLetter}</Text>
+          <View style={styles.settingsBadge}>
+            <Ionicons name="settings" size={10} color="#fff" />
+          </View>
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      {/* ScrollView with Pull-to-Refresh */}
+      <ScrollView 
+        style={styles.content} 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#8b5cf6"
+            colors={['#8b5cf6']}
+          />
+        }
+      >
+        
+        {/* Upcoming Class Banner */}
+        <UpcomingClassBanner userId={userId} />
         
         {renderNextClass()}
 
@@ -710,11 +770,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#8b5cf6',
     justifyContent: 'center',
     alignItems: 'center',
+    position: 'relative',
   },
   avatarText: {
     color: '#fff',
     fontSize: 18,
     fontWeight: '700',
+  },
+  settingsBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#10b981',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#1a1a1a',
   },
   content: {
     flex: 1,

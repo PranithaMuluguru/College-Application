@@ -122,6 +122,14 @@ const ProfileScreen = ({ navigation, route }) => {
     setShowOptionsModal(true);
   };
 
+  // NEW: Navigate to Settings
+  const handleSettingsPress = () => {
+    navigation.navigate('Settings', { 
+      userId: viewerId, 
+      userInfo: profileData.user 
+    });
+  };
+
   if (loading || !profileData) {
     return (
       <View style={[styles.container, styles.centerContent]}>
@@ -145,7 +153,7 @@ const ProfileScreen = ({ navigation, route }) => {
         </View>
       )}
 
-      {/* Header */}
+      {/* Header - UPDATED */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -154,10 +162,15 @@ const ProfileScreen = ({ navigation, route }) => {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        {isOwnProfile && (
-          <TouchableOpacity style={styles.settingsButton}>
+        {isOwnProfile ? (
+          <TouchableOpacity 
+            style={styles.settingsButton}
+            onPress={handleSettingsPress}
+          >
             <Ionicons name="settings-outline" size={24} color="#fff" />
           </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
         )}
       </View>
 
@@ -226,8 +239,8 @@ const ProfileScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
-          {/* Action Buttons - Only for other users' profiles */}
-          {!isOwnProfile && (
+          {/* Action Buttons - UPDATED */}
+          {!isOwnProfile ? (
             <View style={styles.actionButtons}>
               {is_following ? (
                 <TouchableOpacity
@@ -253,6 +266,24 @@ const ProfileScreen = ({ navigation, route }) => {
                 <Ionicons name="mail-outline" size={20} color="#8b5cf6" />
               </TouchableOpacity>
             </View>
+          ) : (
+            // NEW: Edit Profile button for own profile
+            <TouchableOpacity
+              style={styles.editProfileButton}
+              onPress={() => navigation.navigate('EditProfile', { 
+                userId: viewerId, 
+                userInfo: user 
+              })}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={['#8b5cf6', '#7c3aed']}
+                style={styles.editProfileGradient}
+              >
+                <Ionicons name="create-outline" size={18} color="#fff" />
+                <Text style={styles.editProfileText}>Edit Profile</Text>
+              </LinearGradient>
+            </TouchableOpacity>
           )}
         </View>
 
@@ -645,6 +676,25 @@ const styles = StyleSheet.create({
     borderColor: '#2a2a2a',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // NEW: Edit Profile Button Styles
+  editProfileButton: {
+    width: '100%',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  editProfileGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+  },
+  editProfileText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
   },
   tabsContainer: {
     flexDirection: 'row',

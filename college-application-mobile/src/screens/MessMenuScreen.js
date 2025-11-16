@@ -19,7 +19,6 @@ const API_BASE_URL = API_URL;
 
 const MessMenuScreen = ({ navigation }) => {
   const [selectedView, setSelectedView] = useState('today');
-  const [selectedMeal, setSelectedMeal] = useState('Breakfast');
   const [selectedWeeklyDay, setSelectedWeeklyDay] = useState('Monday');
   const [menuData, setMenuData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -37,10 +36,24 @@ const MessMenuScreen = ({ navigation }) => {
   const mealTypes = ['Breakfast', 'Lunch', 'Snacks', 'Dinner'];
 
   const mealIcons = {
-    Breakfast: 'sunny-outline',
-    Lunch: 'restaurant-outline',
-    Snacks: 'cafe-outline',
-    Dinner: 'moon-outline',
+    Breakfast: 'sunny',
+    Lunch: 'fast-food',
+    Snacks: 'cafe',
+    Dinner: 'moon',
+  };
+
+  const mealEmojis = {
+    Breakfast: '🌅',
+    Lunch: '🍛',
+    Snacks: '☕',
+    Dinner: '🌙',
+  };
+
+  const mealColors = {
+    Breakfast: '#FF9800',
+    Lunch: '#4CAF50',
+    Snacks: '#E91E63',
+    Dinner: '#2196F3',
   };
 
   useEffect(() => {
@@ -104,46 +117,41 @@ const MessMenuScreen = ({ navigation }) => {
     }
   };
 
-  const renderMenuItem = ({ item }) => (
-    <View style={styles.menuCard}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.itemName}>{item.item_name}</Text>
-        <View style={styles.ratingBadge}>
-          <Ionicons name="star" size={14} color="#FFB800" />
-          <Text style={styles.ratingText}>
-            {(item.rating || 0).toFixed(1)}
-          </Text>
-        </View>
-      </View>
-      {item.description && (
-        <Text style={styles.description}>{item.description}</Text>
-      )}
-    </View>
-  );
+  const renderMealSection = (mealType, items) => {
+    const color = mealColors[mealType];
 
-  const renderMealSection = (mealType, items) => (
-    <View key={mealType} style={styles.mealSection}>
-      <View style={styles.mealHeader}>
-        <View style={styles.mealTitleContainer}>
-          <View style={styles.iconCircle}>
-            <Ionicons
-              name={mealIcons[mealType]}
-              size={20}
-              color="#4F46E5"
-            />
+    return (
+      <View key={mealType} style={styles.mealSection}>
+        <View style={styles.mealCard}>
+          <View style={styles.mealHeader}>
+            <View
+              style={[
+                styles.mealIconWrapper,
+                { backgroundColor: `${color}20` },
+              ]}
+            >
+              <Text style={styles.mealEmoji}>{mealEmojis[mealType]}</Text>
+            </View>
+            <View style={styles.mealInfo}>
+              <Text style={styles.mealTitle}>{mealType}</Text>
+              <Text style={styles.itemCount}>{items.length} items</Text>
+            </View>
           </View>
-          <Text style={styles.mealTitle}>{mealType}</Text>
+
+          <View style={styles.itemsList}>
+            {items.map((item, index) => (
+              <View key={item.id} style={styles.menuItem}>
+                <View
+                  style={[styles.itemBullet, { backgroundColor: color }]}
+                />
+                <Text style={styles.itemName}>{item.item_name}</Text>
+              </View>
+            ))}
+          </View>
         </View>
-        <Text style={styles.itemCount}>{items.length} items</Text>
       </View>
-      <FlatList
-        data={items}
-        renderItem={renderMenuItem}
-        keyExtractor={(item) => item.id.toString()}
-        scrollEnabled={false}
-      />
-    </View>
-  );
+    );
+  };
 
   const renderTodayView = () => {
     const currentDay =
@@ -160,126 +168,26 @@ const MessMenuScreen = ({ navigation }) => {
         )}
         scrollEventThrottle={16}
       >
-        <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Today's Menu</Text>
-          <Text style={styles.heroSubtitle}>{currentDay}</Text>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.mealTabs}
-          contentContainerStyle={styles.mealTabsContent}
-        >
-          {mealTypes.map((meal) => (
-            <TouchableOpacity
-              key={meal}
-              style={[
-                styles.mealTab,
-                selectedMeal === meal && styles.activeMealTab,
-              ]}
-              onPress={() => setSelectedMeal(meal)}
-              activeOpacity={0.7}
-            >
-              <Ionicons
-                name={mealIcons[meal]}
-                size={20}
-                color={selectedMeal === meal ? '#fff' : '#64748B'}
-              />
-              <Text
-                style={[
-                  styles.mealTabText,
-                  selectedMeal === meal && styles.activeMealTabText,
-                ]}
-              >
-                {meal}
+        <View style={styles.todayBanner}>
+          <View style={styles.bannerContent}>
+            <Text style={styles.bannerEmoji}>🍽️</Text>
+            <View>
+              <Text style={styles.bannerTitle}>Today's Menu</Text>
+              <Text style={styles.bannerSubtitle}>
+                {new Date().toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'short',
+                  day: 'numeric',
+                })}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            </View>
+          </View>
+        </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading deliciousness...</Text>
-          </View>
-        ) : (
-          <View style={styles.menuContainer}>
-            {(() => {
-              const mealItems = dayMenu[selectedMeal] || [];
-              if (mealItems.length === 0) {
-                return (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name="restaurant-outline"
-                      size={64}
-                      color="#CBD5E1"
-                    />
-                    <Text style={styles.emptyText}>
-                      No {selectedMeal.toLowerCase()} items today
-                    </Text>
-                  </View>
-                );
-              }
-              return renderMealSection(selectedMeal, mealItems);
-            })()}
-          </View>
-        )}
-      </ScrollView>
-    );
-  };
-
-  const renderWeeklyView = () => {
-    const dayMenu = menuData[selectedWeeklyDay] || {};
-
-    return (
-      <ScrollView
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.heroSection}>
-          <Text style={styles.heroTitle}>Weekly Menu</Text>
-          <Text style={styles.heroSubtitle}>Plan your week ahead</Text>
-        </View>
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          style={styles.dayTabs}
-          contentContainerStyle={styles.dayTabsContent}
-        >
-          {days.map((day) => (
-            <TouchableOpacity
-              key={day}
-              style={[
-                styles.dayTab,
-                selectedWeeklyDay === day && styles.activeDayTab,
-              ]}
-              onPress={() => setSelectedWeeklyDay(day)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.dayTabText,
-                  selectedWeeklyDay === day && styles.activeDayTabText,
-                ]}
-              >
-                {day.slice(0, 3)}
-              </Text>
-              <Text
-                style={[
-                  styles.dayTabSubtext,
-                  selectedWeeklyDay === day && styles.activeDayTabSubtext,
-                ]}
-              >
-                {day.slice(3)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <Text style={styles.loadingText}>Loading deliciousness...</Text>
+            <Text style={styles.loadingEmoji}>🍳</Text>
+            <Text style={styles.loadingText}>Cooking up the menu...</Text>
           </View>
         ) : (
           <View style={styles.menuContainer}>
@@ -291,11 +199,82 @@ const MessMenuScreen = ({ navigation }) => {
 
             {Object.keys(dayMenu).length === 0 && (
               <View style={styles.emptyState}>
-                <Ionicons
-                  name="calendar-outline"
-                  size={64}
-                  color="#CBD5E1"
-                />
+                <Text style={styles.emptyEmoji}>😕</Text>
+                <Text style={styles.emptyText}>No menu today</Text>
+                <Text style={styles.emptySubtext}>Check back later!</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
+
+  const renderWeeklyView = () => {
+    const dayMenu = menuData[selectedWeeklyDay] || {};
+    const currentDay =
+      days[new Date().getDay() === 0 ? 6 : new Date().getDay() - 1];
+
+    return (
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.weekBanner}>
+          <Text style={styles.weekBannerEmoji}>📅</Text>
+          <Text style={styles.weekBannerText}>Weekly Menu</Text>
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.daySelector}
+          contentContainerStyle={styles.daySelectorContent}
+        >
+          {days.map((day) => {
+            const isSelected = selectedWeeklyDay === day;
+            const isToday = day === currentDay;
+
+            return (
+              <TouchableOpacity
+                key={day}
+                style={[
+                  styles.dayButton,
+                  isSelected && styles.dayButtonSelected,
+                ]}
+                onPress={() => setSelectedWeeklyDay(day)}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.dayButtonText,
+                    isSelected && styles.dayButtonTextSelected,
+                  ]}
+                >
+                  {day.substring(0, 3)}
+                </Text>
+                {isToday && <View style={styles.todayIndicator} />}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <Text style={styles.loadingEmoji}>🍳</Text>
+            <Text style={styles.loadingText}>Cooking up the menu...</Text>
+          </View>
+        ) : (
+          <View style={styles.menuContainer}>
+            {mealTypes.map((mealType) => {
+              const mealItems = dayMenu[mealType] || [];
+              if (mealItems.length === 0) return null;
+              return renderMealSection(mealType, mealItems);
+            })}
+
+            {Object.keys(dayMenu).length === 0 && (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyEmoji}>😕</Text>
                 <Text style={styles.emptyText}>
                   No menu for {selectedWeeklyDay}
                 </Text>
@@ -307,31 +286,22 @@ const MessMenuScreen = ({ navigation }) => {
     );
   };
 
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 100],
-    outputRange: [0, 1],
-    extrapolate: 'clamp',
-  });
-
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1E293B" />
+      <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
 
-      <LinearGradient
-        colors={['#1E293B', '#334155']}
-        style={styles.header}
-      >
-        <Animated.View
-          style={[styles.headerBackground, { opacity: headerOpacity }]}
-        />
-        <View style={styles.headerContent}>
+      <LinearGradient colors={['#1a1a2e', '#16213e']} style={styles.header}>
+        <View style={styles.headerTop}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Mess Menu</Text>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerEmoji}>🍽️</Text>
+            <Text style={styles.headerTitle}>Mess Menu</Text>
+          </View>
           <View style={styles.placeholder} />
         </View>
 
@@ -342,7 +312,7 @@ const MessMenuScreen = ({ navigation }) => {
               selectedView === 'today' && styles.activeToggleButton,
             ]}
             onPress={() => setSelectedView('today')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <Text
               style={[
@@ -359,7 +329,7 @@ const MessMenuScreen = ({ navigation }) => {
               selectedView === 'weekly' && styles.activeToggleButton,
             ]}
             onPress={() => setSelectedView('weekly')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
           >
             <Text
               style={[
@@ -381,58 +351,64 @@ const MessMenuScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#0f0f1e',
   },
   header: {
-    paddingTop: StatusBar.currentHeight + 12 || 40,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingTop: StatusBar.currentHeight + 16 || 44,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
   },
-  headerBackground: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1E293B',
-  },
-  headerContent: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerEmoji: {
+    fontSize: 24,
+  },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#fff',
   },
   placeholder: {
-    width: 40,
+    width: 44,
   },
   viewToggle: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 14,
     padding: 4,
   },
   toggleButton: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
-    borderRadius: 8,
+    borderRadius: 10,
   },
   activeToggleButton: {
-    backgroundColor: '#4F46E5',
+    backgroundColor: 'rgba(255,255,255,0.15)',
   },
   toggleText: {
     fontSize: 15,
     fontWeight: '600',
-    color: 'rgba(255,255,255,0.6)',
+    color: 'rgba(255,255,255,0.5)',
   },
   activeToggleText: {
     color: '#fff',
@@ -440,193 +416,183 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
   },
-  heroSection: {
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+  todayBanner: {
+    margin: 20,
+    backgroundColor: '#1e1e30',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
-  heroTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  mealTabs: {
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  mealTabsContent: {
-    gap: 12,
-  },
-  mealTab: {
+  bannerContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    gap: 16,
   },
-  activeMealTab: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
+  bannerEmoji: {
+    fontSize: 36,
   },
-  mealTabText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#64748B',
+  bannerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 4,
   },
-  activeMealTabText: {
+  bannerSubtitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.6)',
+  },
+  weekBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 20,
+  },
+  weekBannerEmoji: {
+    fontSize: 28,
+  },
+  weekBannerText: {
+    fontSize: 20,
+    fontWeight: '700',
     color: '#fff',
   },
-  dayTabs: {
+  daySelector: {
     paddingHorizontal: 20,
-    marginBottom: 24,
+    marginBottom: 20,
   },
-  dayTabsContent: {
+  daySelectorContent: {
     gap: 10,
   },
-  dayTab: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
+  dayButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#1e1e30',
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
-    minWidth: 70,
-    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
+    position: 'relative',
   },
-  activeDayTab: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
+  dayButtonSelected: {
+    backgroundColor: '#2a2a40',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
-  dayTabText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
+  dayButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'rgba(255,255,255,0.5)',
   },
-  activeDayTabText: {
+  dayButtonTextSelected: {
     color: '#fff',
   },
-  dayTabSubtext: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
-  activeDayTabSubtext: {
-    color: 'rgba(255,255,255,0.8)',
+  todayIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4CAF50',
   },
   menuContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 24,
+    padding: 20,
+    paddingTop: 0,
   },
   mealSection: {
-    marginBottom: 32,
+    marginBottom: 20,
+  },
+  mealCard: {
+    backgroundColor: '#1e1e30',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.05)',
   },
   mealHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
-  mealTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EEF2FF',
+  mealIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 14,
+  },
+  mealEmoji: {
+    fontSize: 28,
+  },
+  mealInfo: {
+    flex: 1,
   },
   mealTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#fff',
+    marginBottom: 2,
   },
   itemCount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
+    fontSize: 13,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.5)',
   },
-  menuCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  itemsList: {
+    gap: 10,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1E293B',
-    flex: 1,
-    marginRight: 12,
-  },
-  ratingBadge: {
+  menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#FFFBEB',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
   },
-  ratingText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#B45309',
+  itemBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 12,
   },
-  description: {
-    fontSize: 14,
-    color: '#64748B',
-    lineHeight: 20,
+  itemName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.85)',
+    lineHeight: 22,
   },
   loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
+    gap: 12,
+  },
+  loadingEmoji: {
+    fontSize: 48,
   },
   loadingText: {
     fontSize: 16,
-    color: '#64748B',
+    color: 'rgba(255,255,255,0.6)',
     fontWeight: '500',
   },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
+  },
+  emptyEmoji: {
+    fontSize: 56,
+    marginBottom: 12,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#94A3B8',
-    marginTop: 16,
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.6)',
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.4)',
     fontWeight: '500',
   },
 });
