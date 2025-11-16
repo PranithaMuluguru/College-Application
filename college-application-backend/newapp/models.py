@@ -14,6 +14,13 @@ from sqlalchemy import (
     or_,
     and_,
 )
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, Float, ForeignKey, JSON, Date, UniqueConstraint
+
+from sqlalchemy import (
+    Column, Integer, String, Text, DateTime, Boolean, 
+    ForeignKey, JSON, Date, Float
+)
+
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -109,6 +116,8 @@ class User(Base):
     
     # Notifications
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+
+    study_preference = relationship("StudyPreference", back_populates="user", uselist=False)
 
 class Course(Base):
     __tablename__ = "courses"
@@ -568,14 +577,15 @@ class MarketplaceMessage(Base):
     
     # Notifications
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
-"""
+"""#####
+
 
 
 
 
 ############################ ADMINN MODELS BELOW THIS LINE ############################
 
-# Add to your existing models.py
+#Add to your existing models.py
 
 class AdminUser(Base):
     __tablename__ = "admin_users"
@@ -605,3 +615,256 @@ class AdminActivityLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     
     admin = relationship("AdminUser", backref="activity_logs")
+
+
+
+
+# Add these to your models.py
+
+class Club(Base):
+    __tablename__ = "clubs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False, unique=True)
+    category = Column(String, nullable=False)  # Sports, Technical, Cultural
+    description = Column(Text, nullable=False)
+    logo_url = Column(String, nullable=True)
+    cover_url = Column(String, nullable=True)
+    club_head_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    club_head = relationship("User", backref="headed_clubs")
+    events = relationship("ClubEvent", back_populates="club", cascade="all, delete-orphan")
+    announcements = relationship("ClubAnnouncement", back_populates="club", cascade="all, delete-orphan")
+    followers = relationship("ClubFollower", back_populates="club", cascade="all, delete-orphan")
+
+class ClubEvent(Base):
+    __tablename__ = "club_events"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=False)
+    event_date = Column(DateTime, nullable=False)
+    location = Column(String, nullable=False)
+    image_url = Column(String, nullable=True)
+    registration_required = Column(Boolean, default=False)
+    max_participants = Column(Integer, nullable=True)
+    status = Column(String, default="scheduled")  # scheduled, ongoing, completed, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    club = relationship("Club", back_populates="events")
+    registrations = relationship("EventRegistration", back_populates="event", cascade="all, delete-orphan")
+    likes = relationship("EventLike", back_populates="event", cascade="all, delete-orphan")
+
+class ClubAnnouncement(Base):
+    __tablename__ = "club_announcements"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    title = Column(String, nullable=False)
+    content = Column(Text, nullable=False)
+    priority = Column(String, default="normal")  # low, normal, high
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    club = relationship("Club", back_populates="announcements")
+
+class ClubFollower(Base):
+    __tablename__ = "club_followers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    club_id = Column(Integer, ForeignKey("clubs.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    club = relationship("Club", back_populates="followers")
+    user = relationship("User", backref="followed_clubs")
+    
+    __table_args__ = (
+        UniqueConstraint('club_id', 'user_id', name='unique_club_follower'),
+    )
+
+class EventRegistration(Base):
+    __tablename__ = "event_registrations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("club_events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    event = relationship("ClubEvent", back_populates="registrations")
+    user = relationship("User", backref="event_registrations")
+    
+    __table_args__ = (
+        UniqueConstraint('event_id', 'user_id', name='unique_event_registration'),
+    )
+
+class EventLike(Base):
+    __tablename__ = "event_likes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(Integer, ForeignKey("club_events.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    event = relationship("ClubEvent", back_populates="likes")
+    user = relationship("User", backref="liked_events")
+    
+    __table_args__ = (
+        UniqueConstraint('event_id', 'user_id', name='unique_event_like'),
+    )
+# Add these imports at the top if not present
+
+
+# ==================== COURSE MANAGEMENT MODELS ====================
+
+class CourseCatalog(Base):
+    __tablename__ = "course_catalog"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    course_code = Column(String(20), unique=True, nullable=False, index=True)
+    course_name = Column(String(200), nullable=False)
+    department = Column(String(100), nullable=False, index=True)
+    credits = Column(Integer, nullable=False)
+    description = Column(Text, nullable=True)
+    year = Column(Integer, nullable=False, index=True)  # 1, 2, 3, 4
+    semester = Column(Integer, nullable=False, index=True)  # 1, 2
+    prerequisites = Column(Text, nullable=True)  # JSON string of prerequisite course codes
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    enrollments = relationship("CourseEnrollment", back_populates="course")
+    study_groups = relationship("StudyGroup", back_populates="course")
+
+
+class CourseEnrollment(Base):
+    __tablename__ = "course_enrollments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("course_catalog.id"), nullable=False)
+    year = Column(Integer, nullable=False)  # Academic year (e.g., 2024)
+    semester = Column(Integer, nullable=False)  # 1 or 2
+    enrollment_date = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+    
+    # Relationships
+    user = relationship("User", backref="course_enrollments")
+    course = relationship("CourseCatalog", back_populates="enrollments")
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'course_id', 'year', 'semester', name='unique_enrollment'),
+    )
+
+
+class StudyGroup(Base):
+    __tablename__ = "study_groups"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    chat_group_id = Column(Integer, ForeignKey("chat_groups.id"), nullable=False)
+    course_id = Column(Integer, ForeignKey("course_catalog.id"), nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    max_size = Column(Integer, default=6)
+    meeting_schedule = Column(JSON, nullable=True)  # {"days": ["Mon", "Wed"], "time": "18:00-20:00"}
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    chat_group = relationship("ChatGroup", backref="study_group")
+    course = relationship("CourseCatalog", back_populates="study_groups")
+    creator = relationship("User", backref="created_study_groups")
+
+
+class StudyBuddyRequest(Base):
+    """Track study buddy requests"""
+    __tablename__ = "study_buddy_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_code = Column(String, nullable=False)
+    message = Column(Text)
+    status = Column(String, default='pending')  # pending, accepted, rejected
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    sender = relationship("User", foreign_keys=[sender_id])
+    receiver = relationship("User", foreign_keys=[receiver_id])
+
+
+    # Add these to your models.py - These are the ONLY missing ones
+
+class StudyPreference(Base):
+    """Study preferences for matching algorithm"""
+    __tablename__ = "study_preferences"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    
+    # Study environment
+    study_environment = Column(String, default='quiet')  # quiet, social, library, cafe
+    
+    # Time preferences
+    preferred_study_time = Column(String, default='evening')  # morning, afternoon, evening, night
+    
+    # Learning style
+    learning_style = Column(String, default='visual')  # visual, auditory, kinesthetic, reading
+    
+    # Session preferences
+    session_duration = Column(Integer, default=120)  # minutes: 30, 60, 120, 180
+    
+    # Group size
+    group_size = Column(String, default='small')  # solo, small (2-3), medium (4-6), large (7+)
+    
+    # Communication style
+    communication_style = Column(String, default='balanced')  # silent, minimal, balanced, collaborative
+    
+    # Primary goal
+    primary_goal = Column(String, default='improve_grades')  # improve_grades, understand_concepts, exam_prep, project_help
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationship
+    user = relationship("User", back_populates="study_preference")
+
+
+class StudyGoal(Base):
+    """Individual and collaborative study goals"""
+    __tablename__ = "study_goals"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    course_code = Column(String, nullable=False)
+    target_grade = Column(String)
+    target_date = Column(DateTime)
+    description = Column(Text)
+    is_collaborative = Column(Boolean, default=False)
+    status = Column(String, default='active')  # active, completed, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    creator = relationship("User", foreign_keys=[created_by])
+    participants = relationship("StudyGoalParticipant", back_populates="goal")
+
+
+class StudyGoalParticipant(Base):
+    """Many-to-many for collaborative goals"""
+    __tablename__ = "study_goal_participants"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    goal_id = Column(Integer, ForeignKey("study_goals.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+    
+    goal = relationship("StudyGoal", back_populates="participants")
+    user = relationship("User")
+
+
+# Add ONLY this line to your existing User class:
+# Inside class User(Base):
+#     study_preference = relationship("StudyPreference", back_populates="user", uselist=False)

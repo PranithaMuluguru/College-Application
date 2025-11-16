@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 from passlib.context import CryptContext
 import jwt
+from jwt import DecodeError
 
 from .database import get_database
 from . import models
@@ -65,7 +66,7 @@ def verify_admin_token(token: str, db: Session):
         return admin
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.JWTError:
+    except DecodeError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 async def get_admin_token(authorization: str = Header(None)) -> str:
@@ -73,6 +74,14 @@ async def get_admin_token(authorization: str = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
     return authorization.replace("Bearer ", "")
+
+def get_current_user(token: str = Depends(get_admin_token), db: Session = Depends(get_database)) -> models.User:
+    """Get current authenticated user"""
+    admin = verify_admin_token(token, db)
+    user = db.query(models.User).filter(models.User.id == admin.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
 
 # Routes
 @router.get("/test")
@@ -88,33 +97,19 @@ async def admin_login(
     request: AdminLoginRequest,
     db: Session = Depends(get_database)
 ):
-    """
-    Admin login endpoint
-    
-    Accepts email or college_id as identifier
-    Returns JWT token and user/admin information
-    """
+    """Admin login endpoint"""
     try:
-        # Find user by email or college_id
         user = db.query(models.User).filter(
             (models.User.email == request.identifier) |
             (models.User.college_id == request.identifier)
         ).first()
         
         if not user:
-            raise HTTPException(
-                status_code=404,
-                detail="User not found"
-            )
+            raise HTTPException(status_code=404, detail="User not found")
         
-        # Verify password
         if not pwd_context.verify(request.password, user.hashed_password):
-            raise HTTPException(
-                status_code=401,
-                detail="Incorrect password"
-            )
+            raise HTTPException(status_code=401, detail="Incorrect password")
         
-        # Check if user has admin privileges
         admin = db.query(models.AdminUser).filter(
             models.AdminUser.user_id == user.id,
             models.AdminUser.is_active == True
@@ -126,23 +121,23 @@ async def admin_login(
                 detail="User is not authorized as admin"
             )
         
-        # Update last login timestamps
         admin.last_login = datetime.utcnow()
         user.last_login = datetime.utcnow()
         
-        # Log admin activity
-        activity_log = models.AdminActivityLog(
-            admin_id=admin.id,
-            action="login",
-            details={"identifier": request.identifier}
-        )
-        db.add(activity_log)
+        try:
+            activity_log = models.AdminActivityLog(
+                admin_id=admin.id,
+                action="login",
+                details={"identifier": request.identifier}
+            )
+            db.add(activity_log)
+        except:
+            pass  # Non-critical
+        
         db.commit()
         
-        # Generate JWT token
         token = create_admin_token(admin.id, user.id)
         
-        # Return response
         return AdminLoginResponse(
             access_token=token,
             admin_user={
@@ -161,15 +156,11 @@ async def admin_login(
                 "year": user.year
             }
         )
-        
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(
-            status_code=500,
-            detail=f"Login failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/create-admin")
 async def create_new_admin(

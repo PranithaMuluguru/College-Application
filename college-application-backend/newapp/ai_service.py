@@ -1,6 +1,5 @@
 # newapp/ai_service.py
 
-from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 from newapp import models
@@ -10,16 +9,68 @@ from difflib import SequenceMatcher
 import re
 import os
 
-# Configure OpenAI
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "ttt")
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+# LangChain imports
+from langchain.agents import create_agent
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+# Configure OpenAI API Key
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+
+# Configure MCP Client
+mcp_client = MultiServerMCPClient(
+    {
+        "college": {
+            "transport": "streamable_http",
+            "url": os.getenv("MCP_SERVER_URL", "http://10.32.5.221:8080/mcp"),
+        },
+    }
+)
+
 
 class AIAssistant:
     def __init__(self, db: Session):
         self.db = db
+        self.agent = None
+        self.tools = None
+        
+    async def initialize_agent(self):
+        """Initialize the MCP agent with tools"""
+        if self.agent is None:
+            self.tools = await mcp_client.get_tools()
+            # Create agent with system prompt
+            self.agent = create_agent(
+                "gpt-4o",  # or "gpt-3.5-turbo" for cost savings
+                self.tools,
+                system_prompt="""You are an AI assistant specifically for IIT Palakkad students.
+
+CORE RESPONSIBILITIES:
+1. Answer student queries accurately using available tools and knowledge base
+2. Provide clear, well-structured responses with proper formatting
+3. Extract and provide relevant contact information when needed
+4. Be friendly, helpful, and student-oriented
+
+RESPONSE GUIDELINES:
+- Use bullet points or numbered lists for clarity
+- Keep responses under 250 words unless detailed explanation needed
+- Use emojis sparingly (1-2 max) for friendliness
+- Always cite sources when using knowledge base information
+- If uncertain, be honest and suggest relevant contacts
+
+CONTACT SUGGESTIONS:
+- Academic queries → academics@iitpkd.ac.in
+- Hostel queries → hostel@iitpkd.ac.in
+- Exam queries → exams@iitpkd.ac.in
+- General queries → office@iitpkd.ac.in
+
+You have access to tools that can query the college database. Use them when appropriate."""
+            )
         
     async def get_response(self, user_id: int, message: str) -> Dict:
-        """Main function to get AI response - ALWAYS uses OpenAI for clean answers"""
+        """Main function to get AI response using MCP + LangChain"""
+        
+        # Initialize agent if needed
+        await self.initialize_agent()
         
         # Save user message
         self._save_chat(user_id, message, True)
@@ -27,16 +78,18 @@ class AIAssistant:
         # Step 1: Search knowledge base for relevant context
         kb_results = self._search_knowledge_base(message)
         
-        # Step 2: ALWAYS query OpenAI (with or without KB context)
+        # Step 2: Query agent with full context
         try:
             if kb_results and kb_results[0]['similarity'] > 0.4:
-                # We have relevant knowledge - let OpenAI use it
-                response_data = await self._query_openai_with_kb_context(message, kb_results)
+                # We have relevant knowledge - provide it to agent
+                response_data = await self._query_agent_with_kb_context(
+                    user_id, message, kb_results
+                )
                 confidence = "high" if kb_results[0]['similarity'] > 0.65 else "medium"
                 has_kb_data = True
             else:
-                # No relevant knowledge - let OpenAI use its own knowledge
-                response_data = await self._query_openai_general(message)
+                # No relevant knowledge - let agent use its own knowledge + tools
+                response_data = await self._query_agent_general(user_id, message)
                 confidence = "medium"
                 has_kb_data = False
             
@@ -51,7 +104,7 @@ class AIAssistant:
             # Remove duplicates
             contacts = self._deduplicate_contacts(contacts)
             
-            # Check if OpenAI couldn't answer
+            # Check if agent couldn't answer
             if self._is_uncertain_response(response_text):
                 confidence = "low"
                 # Save as unanswered question for admin review
@@ -61,7 +114,8 @@ class AIAssistant:
                 if not contacts:
                     contacts = self._suggest_contacts_for_query(message)
                 
-                response_text += f"\n\n💡 I've noted this question for review. Meanwhile, try contacting: {contacts[0]['email']}"
+                if contacts:
+                    response_text += f"\n\n💡 I've noted this question for review. Meanwhile, try contacting: {contacts[0]['email']}"
                 
                 self._save_chat(user_id, response_text, False, 0.3)
                 
@@ -87,7 +141,7 @@ class AIAssistant:
             }
             
         except Exception as e:
-            print(f"OpenAI error: {e}")
+            print(f"Agent error: {e}")
             # Fallback response
             self._save_unanswered_question(user_id, message)
             contacts = self._get_general_contacts()
@@ -102,6 +156,115 @@ class AIAssistant:
                 "unanswered": True,
                 "chat_id": self._get_last_chat_id(user_id)
             }
+    
+    async def _query_agent_with_kb_context(
+        self, user_id: int, message: str, kb_results: List[Dict]
+    ) -> Dict:
+        """Query agent WITH knowledge base context"""
+        
+        # Build context from knowledge base
+        context = self._build_detailed_context(kb_results)
+        
+        # Create comprehensive prompt with user context
+        user_prompt = f"""USER CONTEXT:
+- User ID: {user_id}
+- Remember this user ID for any tool calls that require user identification
+
+📚 KNOWLEDGE BASE INFORMATION (Use this as PRIMARY source):
+{context}
+
+🎓 STUDENT'S QUESTION: {message}
+
+Instructions:
+1. Use the knowledge base information provided above as your main source
+2. If you need additional user-specific data, use the available tools with user_id={user_id}
+3. Extract and mention any relevant contacts (emails/phones) from the KB
+4. Provide a clear, well-structured answer
+5. Be specific and accurate
+6. Use bullet points or numbered lists when appropriate
+
+Provide your answer:"""
+
+        try:
+            # Invoke agent
+            agent_response = await self.agent.ainvoke(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": user_prompt
+                        }
+                    ]
+                }
+            )
+            
+            # Extract final response
+            answer_text = agent_response["messages"][-1].content
+            
+            # Extract contacts mentioned in response
+            contacts = self._extract_contacts_from_text(answer_text)
+            
+            return {
+                'answer': answer_text,
+                'contacts': contacts
+            }
+        except Exception as e:
+            print(f"Agent query error: {e}")
+            raise
+    
+    async def _query_agent_general(self, user_id: int, message: str) -> Dict:
+        """Query agent WITHOUT KB context - uses general knowledge + tools"""
+        
+        user_prompt = f"""USER CONTEXT:
+- User ID: {user_id}
+- Remember this user ID for any tool calls that require user identification
+
+🎓 STUDENT'S QUESTION: {message}
+
+Instructions:
+1. Answer about IIT Palakkad to the best of your knowledge
+2. Use available tools if they can help answer the question (remember to use user_id={user_id})
+3. Be honest if you're not certain about specific details
+4. Suggest contacting relevant departments when appropriate
+5. Structure your answer clearly with bullet points if needed
+6. Keep response under 200 words
+7. If you don't have enough information, say so and suggest whom to contact:
+   * Academic queries → academics@iitpkd.ac.in
+   * Hostel queries → hostel@iitpkd.ac.in
+   * General queries → office@iitpkd.ac.in
+
+Provide your answer:"""
+
+        try:
+            # Invoke agent
+            agent_response = await self.agent.ainvoke(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": user_prompt
+                        }
+                    ]
+                }
+            )
+            
+            # Extract final response
+            answer_text = agent_response["messages"][-1].content
+            
+            # Extract any contacts mentioned
+            contacts = self._extract_contacts_from_text(answer_text)
+            
+            # If no contacts found, suggest based on query
+            if not contacts:
+                contacts = self._suggest_contacts_for_query(message)
+            
+            return {
+                'answer': answer_text,
+                'contacts': contacts
+            }
+        except Exception as e:
+            print(f"Agent query error: {e}")
+            raise
     
     def _search_knowledge_base(self, query: str, limit: int = 10) -> List[Dict]:
         """Search knowledge base using semantic similarity"""
@@ -162,113 +325,6 @@ class AIAssistant:
         
         # Weighted combination (title matches are more important)
         return title_sim * 0.4 + content_sim * 0.35 + sequence_sim * 0.25
-    
-    async def _query_openai_with_kb_context(self, message: str, kb_results: List[Dict]) -> Dict:
-        """Query OpenAI WITH knowledge base context for accurate, structured answers"""
-        
-        # Build context from knowledge base
-        context = self._build_detailed_context(kb_results)
-        
-        # Create comprehensive prompt
-        system_prompt = """You are an AI assistant specifically for IIT Palakkad students. Your job is to provide clear, accurate, and well-structured answers.
-
-GUIDELINES:
-1. Use the provided knowledge base information as your PRIMARY source of truth
-2. Structure your answer clearly with proper formatting
-3. Be specific and accurate - cite actual information from the knowledge base
-4. If the KB has relevant contacts (emails/phones), mention them
-5. Be friendly and helpful like talking to a fellow student
-6. Use bullet points or numbered lists when explaining multiple things
-7. Keep response under 250 words unless a detailed explanation is needed
-8. If KB info is partial, supplement with your general IIT knowledge
-9. Use emojis sparingly (1-2 max) for friendliness
-
-Provide a clear, well-structured answer."""
-
-        user_prompt = f"""📚 KNOWLEDGE BASE INFORMATION (Use this as your PRIMARY source):
-{context}
-
-🎓 STUDENT'S QUESTION: {message}
-
-Provide a clear, well-structured answer:"""
-
-        try:
-            response = await client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Use gpt-4 for better quality if you have access
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=500
-            )
-            
-            answer_text = response.choices[0].message.content
-            
-            # Extract contacts mentioned in response
-            contacts = self._extract_contacts_from_text(answer_text)
-            
-            return {
-                'answer': answer_text,
-                'contacts': contacts
-            }
-        except Exception as e:
-            print(f"OpenAI API error: {e}")
-            raise
-    
-    async def _query_openai_general(self, message: str) -> Dict:
-        """Query OpenAI WITHOUT KB context - uses general IIT Palakkad knowledge"""
-        
-        system_prompt = """You are an AI assistant specifically for IIT Palakkad students.
-
-GUIDELINES:
-1. Use your knowledge about IIT Palakkad to answer
-2. Be honest if you're not certain about specific details
-3. Structure your answer clearly
-4. Suggest contacting relevant departments when appropriate
-5. Be friendly and helpful
-6. Use bullet points or numbered lists for clarity
-7. Keep response under 200 words
-8. If uncertain, suggest whom to contact
-
-IMPORTANT: 
-- Only answer about IIT Palakkad
-- If you don't have enough information, say so and suggest contacting:
-  * Academic queries → academics@iitpkd.ac.in
-  * Hostel queries → hostel@iitpkd.ac.in
-  * General queries → office@iitpkd.ac.in"""
-
-        user_prompt = f"""🎓 STUDENT'S QUESTION: {message}
-
-Provide a clear, structured answer:"""
-
-        try:
-            response = await client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Use gpt-4 for better quality if you have access
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=400
-            )
-            
-            answer_text = response.choices[0].message.content
-            
-            # Extract any contacts mentioned
-            contacts = self._extract_contacts_from_text(answer_text)
-            
-            # If no contacts found, suggest based on query
-            if not contacts:
-                contacts = self._suggest_contacts_for_query(message)
-            
-            return {
-                'answer': answer_text,
-                'contacts': contacts
-            }
-        except Exception as e:
-            print(f"OpenAI API error: {e}")
-            raise
     
     def _build_detailed_context(self, kb_results: List[Dict]) -> str:
         """Build detailed context from knowledge base results"""
@@ -342,7 +398,7 @@ Provide a clear, structured answer:"""
             return 'IIT Palakkad'
     
     def _is_uncertain_response(self, response: str) -> bool:
-        """Check if OpenAI response indicates uncertainty"""
+        """Check if agent response indicates uncertainty"""
         uncertain_phrases = [
             "i don't have",
             "i'm not sure",
@@ -508,11 +564,10 @@ Provide a clear, structured answer:"""
         self.db.commit()
     
     def _guess_category(self, text: str) -> str:
-        """Guess category from question text - NO LIMITATIONS, learn from content"""
+        """Guess category from question text"""
         text_lower = text.lower()
         
         # Try to find the most relevant category from our knowledge base
-        # by looking at what categories exist for similar questions
         try:
             # Get all unique categories from KB
             categories = self.db.query(models.KnowledgeBase.category).distinct().all()

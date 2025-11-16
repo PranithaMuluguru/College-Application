@@ -11,9 +11,9 @@ import MessMenuScreen from './src/screens/MessMenuScreen.js';
 import AcademicsScreen from './src/screens/AcademicsScreen';
 import SportsScreen from './src/screens/SportsScreen';
 import CampusScreen from './src/screens/CampusScreen';
-import ClubsScreen from './src/screens/ClubsScreen';
-import ClubDetailScreen from './src/screens/ClubDetailScreen';
-import ClubAnnouncementsScreen from './src/screens/ClubAnnouncementsScreen';
+// import ClubsScreen from './src/screens/ClubsScreen';
+// import ClubDetailScreen from './src/screens/ClubDetailScreen';
+// import ClubAnnouncementsScreen from './src/screens/ClubAnnouncementsScreen';
 import BusScheduleScreen from './src/screens/BusScheduleScreen'; // Fixed import
 
 
@@ -48,7 +48,28 @@ import UserSearchScreen from './src/screens/social/UserSearchScreen';
 import AdminLoginScreen from './src/screens/admin/AdminLoginScreen';
 import AdminDashboardScreen from './src/screens/admin/AdminDashboardScreen';
 import AdminManagementScreen from './src/screens/admin/AdminManagementScreen';
+import ManageClubsScreen from './src/screens/admin/ManageClubsScreen';
+import CreateClubScreen from './src/screens/admin/CreateClubScreen';
+import CourseManagementScreen from './src/screens/admin/CourseManagementScreen.js';
+import UpdateClubHeadScreen from './src/screens/admin/UpdateClubHeadScreen.js';
+import AdminClubDetailScreen from './src/screens/admin/AdminClubDetailScreen.js';
 //////// admin screens end //////// 
+
+//// ADD CLUBS ///
+import ClubDetailScreen from './src/screens/clubs/ClubDetailScreen.js';
+import ClubsScreen from './src/screens/clubs/ClubsScreen';
+import ClubHeadDashboardScreen from './src/screens/clubs/ClubHeadDashboardScreen.js';
+import CreateEventScreen from './src/screens/clubs/CreateEventScreen.js'; 
+import EventDetailScreen  from  './src/screens/clubs/EventDetailScreen.js';
+import CreateAnnouncementScreen from './src/screens/clubs/CreateAnnouncementScreen.js';
+//// ADD CLUBS END ///  
+
+////ADD courses ///////
+import CoursesScreen from './src/screens/courses/CoursesScreen.js';
+import StudyBuddyScreen from './src/screens/courses/StudyBuddyScreen.js'; 
+import StudyGroupsScreen from './src/screens/courses/StudyGroupsScreen.js';
+import CourseGroupScreen from './src/screens/courses/CourseGroupScreen.js';
+import StudyPreferencesScreen from './src/screens/courses/StudyPreferencesScreen.js';
 
 
 const Stack = createNativeStackNavigator();
@@ -81,9 +102,9 @@ export default function App() {
         <Stack.Screen name="Academics" component={AcademicsScreen} />
         <Stack.Screen name="Sports" component={SportsScreen} />
         <Stack.Screen name="Campus" component={CampusScreen} />
-        <Stack.Screen name="Clubs" component={ClubsScreen} />
-        <Stack.Screen name="ClubDetail" component={ClubDetailScreen} />
-        <Stack.Screen name="ClubAnnouncements" component={ClubAnnouncementsScreen} />
+        {/* <Stack.Screen name="Clubs" component={ClubsScreen} /> */}
+        {/* <Stack.Screen name="ClubDetail" component={ClubDetailScreen} /> */}
+        {/* <Stack.Screen name="ClubAnnouncements" component={ClubAnnouncementsScreen} /> */}
         <Stack.Screen name="ChatList" component={ChatListScreen} options={{ headerShown: false }} />
 <Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
 <Stack.Screen name="Feed" component={FeedScreen} options={{ headerShown: false }} />
@@ -147,6 +168,93 @@ export default function App() {
   component={AdminManagementScreen}
   options={{ headerShown: false }}  // Add this
 />
+    {/* Club Screens - User */}
+      <Stack.Screen 
+        name="Clubs" 
+        component={ClubsScreen}
+        options={{ title: 'Clubs' }}
+      />
+      <Stack.Screen 
+        name="ClubDetail" 
+        component={ClubDetailScreen}
+        options={{ title: 'Club Details' }}
+      />
+      <Stack.Screen 
+        name="EventDetail" 
+        component={EventDetailScreen}
+        options={{ title: 'Event Details' }}
+      />
+      
+      {/* Club Screens - Club Head */}
+      <Stack.Screen 
+        name="ClubHeadDashboard" 
+        component={ClubHeadDashboardScreen}
+        options={{ title: 'Club Dashboard' }}
+      />
+      <Stack.Screen 
+        name="CreateEvent" 
+        component={CreateEventScreen}
+        options={{ title: 'Create Event' }}
+      />
+      <Stack.Screen 
+        name="CreateAnnouncement" 
+        component={CreateAnnouncementScreen}
+        options={{ title: 'New Announcement' }}
+      />
+      
+      {/* Admin Club Management */}
+      <Stack.Screen 
+        name="ManageClubs" 
+        component={ManageClubsScreen}
+        options={{ title: 'Manage Clubs' }}
+      />
+      <Stack.Screen 
+        name="CreateClub" 
+        component={CreateClubScreen}
+        options={{ title: 'Create Club' }}
+      />
+
+      <Stack.Screen 
+  name="Courses"
+  component={CoursesScreen}
+  options={{ title: 'My Courses' }}
+/>
+
+<Stack.Screen 
+  name="StudyBuddy"
+  component={StudyBuddyScreen}
+  options={{ title: 'Study Buddy' }}
+/>
+
+<Stack.Screen 
+  name="StudyGroups"
+  component={StudyGroupsScreen}
+  options={{ title: 'Study Groups' }}
+/>
+
+{/* Admin Course Management */}
+<Stack.Screen 
+  name="CourseManagement"
+  component={CourseManagementScreen}
+  options={{ title: 'Manage Courses' }}
+/>
+<Stack.Screen 
+  name="CourseGroup" 
+  component={CourseGroupScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="AdminUpdateClubHead" 
+  component={AdminClubDetailScreen}
+  options={{ headerShown: false }}
+/>
+<Stack.Screen 
+  name="studyPreferences" 
+  component={StudyPreferencesScreen}
+  options={{ headerShown: false }}
+/>
+      
+
       </Stack.Navigator>
     </NavigationContainer>
   );

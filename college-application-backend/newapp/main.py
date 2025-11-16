@@ -24,6 +24,28 @@ from newapp.web_scraper import scrape_iitpkd_website
 # Add to your main.py
 from newapp.admin_auth import router as admin_auth_router
 from newapp.create_default_admin import create_default_admin
+from newapp.study_buddy_routes import router as study_buddy_router
+
+# Import new routers
+from . import course_routes
+from . import study_buddy_routes
+
+# ###########CLUBS    
+# # from .auth import router as auth_router
+from .admin_auth import router as admin_auth_router
+# # from .routes.admin import router as admin_router
+# from .routes.clubs import router as clubs_router
+# from .routes.club_members import router as club_members_router
+# from .routes.club_follows import router as club_follows_router
+# from .routes.club_events import router as club_events_router
+# from .routes.club_announcements import router as club_announcements_router
+# from .routes.club_photos import router as club_photos_router
+# from .routes.club_achievements import router as club_achievements_router
+# from .routes.calendar import router as calendar_router
+# # from .middleware.performance import PerformanceMiddleware, SystemMetricsMiddleware
+# # from .config.settings import settings
+from .club_routes import router as club_routes_router
+from .admin_routes import router as admin_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)  # Add this line!
@@ -78,6 +100,25 @@ async def root():
 # Debug routes on startup
 
 app.include_router(admin_auth_router)
+# # app.include_router(auth_router, prefix="/auth", tags=["authentication"])
+# app.include_router(admin_auth_router, prefix="/admin/auth", tags=["admin-auth"])
+# # app.include_router(admin_router, prefix="/admin", tags=["admin"])
+# app.include_router(clubs_router, prefix="/clubs", tags=["clubs"])
+# app.include_router(club_members_router, prefix="/clubs", tags=["club-members"])
+# app.include_router(club_follows_router, prefix="/clubs", tags=["club-follows"])
+# app.include_router(club_events_router, prefix="/events", tags=["club-events"])
+# app.include_router(club_announcements_router, prefix="/announcements", tags=["club-announcements"])
+# app.include_router(club_photos_router, prefix="/photos", tags=["club-photos"])
+# app.include_router(club_achievements_router, prefix="/achievements", tags=["club-achievements"])
+# app.include_router(calendar_router, prefix="/calendar", tags=["calendar"])
+# Include routers
+app.include_router(course_routes.router)
+app.include_router(study_buddy_routes.router)
+app.include_router(club_routes_router)  # /clubs
+app.include_router(admin_router)  # /admin
+app.include_router(study_buddy_router)  # /study-buddy
+
+
 
 
 # Import router and verify it exists

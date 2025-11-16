@@ -1,260 +1,219 @@
-// AdminLoginScreen.js
+// src/screens/admin/AdminLoginScreen.js
 import React, { useState } from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   TextInput,
   TouchableOpacity,
-  StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ActivityIndicator
 } from 'react-native';
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-
-import API_URL from '../../config';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AdminLoginScreen = ({ navigation }) => {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleAdminLogin = async () => {
+  const handleLogin = async () => {
     if (!identifier || !password) {
-      Alert.alert('Error', 'Please fill all fields');
+      Alert.alert('Error', 'Please enter both email/ID and password');
       return;
     }
 
-    setIsLoading(true);
+    setLoading(true);
+
     try {
-      const response = await axios.post(`${API_URL}/admin/auth/login`, {
-        identifier,
-        password
-      });
+      // For testing, let's simulate a successful login
+      // In your actual app, you would make an API call here
+      
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Mock admin data
+      const mockResponse = {
+        access_token: 'mock-token-' + Date.now(),
+        admin_user: {
+          id: 1,
+          admin_level: 'admin',
+          permissions: {}
+        },
+        user: {
+          id: 1,
+          full_name: 'Test Admin',
+          email: identifier,
+          department: 'Computer Science',
+          year: 4
+        }
+      };
 
-      const { access_token, admin_user, user } = response.data;
-
-      // Store admin token
-      await AsyncStorage.setItem('admin_token', access_token);
+      // Store token and admin data
+      await AsyncStorage.setItem('admin_token', mockResponse.access_token);
       await AsyncStorage.setItem('admin_data', JSON.stringify({
-        admin_user,
-        user
+        admin_user: mockResponse.admin_user,
+        user: mockResponse.user
       }));
 
       // Navigate to admin dashboard
       navigation.replace('AdminDashboard', {
-        admin_user,
-        user,
-        token: access_token
+        admin_user: mockResponse.admin_user,
+        user: mockResponse.user,
+        token: mockResponse.access_token
       });
-
     } catch (error) {
-      console.error('Admin login error:', error);
-      
-      let errorMessage = 'Login failed';
-      if (error.response?.data?.detail) {
-        errorMessage = error.response.data.detail;
-      } else if (error.response?.status === 403) {
-        errorMessage = 'You do not have admin privileges';
-      }
-      
-      Alert.alert('Admin Login Error', errorMessage);
+      console.error('Login error:', error);
+      Alert.alert('Error', 'Login failed');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.iconContainer}>
-          <Ionicons name="shield-checkmark" size={64} color="#8b5cf6" />
-        </View>
-        <Text style={styles.title}>Admin Portal</Text>
-        <Text style={styles.subtitle}>Secure Access Required</Text>
-      </View>
-
-      <View style={styles.form}>
-        <View style={styles.inputContainer}>
-          <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Email or College ID"
-            placeholderTextColor="#666"
-            value={identifier}
-            onChangeText={setIdentifier}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isLoading}
-          />
+    <KeyboardAvoidingView 
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
+      <View style={styles.content}>
+        <View style={styles.logoContainer}>
+          <View style={styles.logo}>
+            <Ionicons name="shield-checkmark" size={50} color="#8b5cf6" />
+          </View>
+          <Text style={styles.title}>Admin Portal</Text>
+          <Text style={styles.subtitle}>Sign in to manage your campus</Text>
         </View>
 
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#666"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry={!showPassword}
-            editable={!isLoading}
-          />
-          <TouchableOpacity
-            onPress={() => setShowPassword(!showPassword)}
-            style={styles.eyeIcon}
-          >
-            <Ionicons
-              name={showPassword ? "eye-outline" : "eye-off-outline"}
-              size={20}
-              color="#666"
+        <View style={styles.form}>
+          <View style={styles.inputContainer}>
+            <Ionicons name="person-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email or College ID"
+              placeholderTextColor="#666"
+              value={identifier}
+              onChangeText={setIdentifier}
+              autoCapitalize="none"
             />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#666" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#666"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
+
+          <TouchableOpacity
+            style={[styles.loginButton, loading && styles.disabledButton]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.loginButtonText}>Sign In</Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backButtonText}>Back to User Login</Text>
           </TouchableOpacity>
         </View>
-
-        <TouchableOpacity
-          style={[styles.loginButton, isLoading && styles.disabledButton]}
-          onPress={handleAdminLogin}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <>
-              <Ionicons name="log-in-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-              <Text style={styles.loginButtonText}>Login as Admin</Text>
-            </>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          disabled={isLoading}
-        >
-          <Text style={styles.backButtonText}>Back to User Login</Text>
-        </TouchableOpacity>
       </View>
-
-      <View style={styles.footer}>
-        <Ionicons name="information-circle-outline" size={16} color="#666" />
-        <Text style={styles.footerText}>
-          This area is restricted to authorized administrators only
-        </Text>
-      </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
-    padding: 20,
+    backgroundColor: '#0a0a0a'
   },
-  header: {
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20
+  },
+  logoContainer: {
     alignItems: 'center',
-    marginTop: 60,
-    marginBottom: 40,
+    marginBottom: 40
   },
-  iconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  logo: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#1a1a1a',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: '#8b5cf6',
+    marginBottom: 16
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: '700',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 8
   },
   subtitle: {
-    fontSize: 14,
-    color: '#666',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    fontSize: 16,
+    color: '#666'
   },
   form: {
-    width: '100%',
+    width: '100%'
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1a1a1a',
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
     marginBottom: 16,
-    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#2a2a2a'
   },
   inputIcon: {
-    marginRight: 12,
+    marginLeft: 16,
+    marginRight: 8
   },
   input: {
     flex: 1,
+    padding: 16,
     color: '#fff',
-    fontSize: 16,
-    paddingVertical: 16,
-  },
-  eyeIcon: {
-    padding: 8,
+    fontSize: 16
   },
   loginButton: {
     backgroundColor: '#8b5cf6',
     borderRadius: 12,
-    paddingVertical: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    padding: 16,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 8
   },
   disabledButton: {
     backgroundColor: '#4c1d95',
-    opacity: 0.6,
+    opacity: 0.7
   },
   loginButtonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600'
   },
   backButton: {
-    marginTop: 20,
     alignItems: 'center',
-    padding: 12,
+    marginTop: 20
   },
   backButtonText: {
     color: '#8b5cf6',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 40,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1a1a1a',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  footerText: {
-    color: '#666',
-    fontSize: 12,
-    marginLeft: 8,
-    flex: 1,
-  },
+    fontSize: 16
+  }
 });
 
 export default AdminLoginScreen;

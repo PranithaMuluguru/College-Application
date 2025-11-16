@@ -279,11 +279,11 @@ const HomeScreen = ({ navigation, route }) => {
       icon: 'chatbubble-outline',
       onPress: () => navigation.navigate('ChatList', { userId, userInfo }) // Changed from MessMenu
     },
-    { 
-      name: 'Profile', 
-      icon: 'person-outline',
-      onPress: () => Alert.alert('Coming Soon', 'Profile feature is under development') 
-    },
+   { 
+    name: 'Clubs', 
+    icon: 'people-outline', // or use 'globe-outline'
+    onPress: () => navigation.navigate('Clubs', { userId, userInfo, token })
+  },
   ];
 
   const renderNextClass = () => {

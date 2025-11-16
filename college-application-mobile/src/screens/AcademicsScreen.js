@@ -19,7 +19,7 @@ import { BarChart, LineChart, PieChart } from 'react-native-chart-kit';
 import * as Notifications from 'expo-notifications';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import ClockTimePicker from './ClockTimePicker';
-import CalendarPicker from './CalendarPicker'; // Import the calendar picker
+import CalendarPicker from './CalendarPicker';
 import API_URL from '../config';
 const API_BASE_URL = API_URL;
 
@@ -55,7 +55,7 @@ const AcademicsScreen = ({ route, navigation }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [timePickerType, setTimePickerType] = useState('start');
   const [attendanceStatus, setAttendanceStatus] = useState('present');
-  const [showCalendarPicker, setShowCalendarPicker] = useState(false); // Add calendar picker state
+  const [showCalendarPicker, setShowCalendarPicker] = useState(false);
   
   // Course-based attendance tracking
   const [coursesData, setCoursesData] = useState([]);
@@ -1323,6 +1323,166 @@ const AcademicsScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </View>
 
+      {/* Quick Access Navigation */}
+      <View style={styles.quickAccessContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.quickAccessScroll}
+        >
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={() => navigation.navigate('Courses', { userId: currentUserId, userInfo })}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#3b82f620' }]}>
+              <Ionicons name="book-outline" size={20} color="#3b82f6" />
+            </View>
+            <Text style={styles.quickAccessText}>My Courses</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={async () => {
+              try {
+                // Check if user has preferences set
+                const response = await axios.get(`${API_URL}/ai/preferences/${currentUserId}`);
+                
+                if (!response.data.has_preferences) {
+                  Alert.alert(
+                    'Set Preferences First',
+                    'Please set your study preferences to find better matches',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Set Preferences', 
+                        onPress: () => navigation.navigate('StudyPreferences', { userId: currentUserId })
+                      }
+                    ]
+                  );
+                  return;
+                }
+                
+                // If preferences exist, navigate to StudyBuddy
+                if (coursesData.length > 0) {
+                  const selectedCourse = coursesData[0];
+                  
+                  navigation.navigate('StudyBuddy', {
+                    userId: currentUserId,
+                    courseCode: selectedCourse.course_code || null,
+                    courseName: selectedCourse.course_name || 'All Courses'
+                  });
+                } else {
+                  Alert.alert('No Courses', 'Please enroll in courses first to find study buddies');
+                }
+              } catch (error) {
+                console.error('Error checking preferences:', error);
+                // If API fails, still allow navigation
+                if (coursesData.length > 0) {
+                  const selectedCourse = coursesData[0];
+                  navigation.navigate('StudyBuddy', {
+                    userId: currentUserId,
+                    courseCode: selectedCourse.course_code || null,
+                    courseName: selectedCourse.course_name || 'All Courses'
+                  });
+                } else {
+                  Alert.alert('No Courses', 'Please enroll in courses first to find study buddies');
+                }
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#10b98120' }]}>
+              <Ionicons name="people-outline" size={20} color="#10b981" />
+            </View>
+            <Text style={styles.quickAccessText}>Find Buddies</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={() => navigation.navigate('studyPreferences', { userId: currentUserId })}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#8b5cf620' }]}>
+              <Ionicons name="settings-outline" size={20} color="#8b5cf6" />
+            </View>
+            <Text style={styles.quickAccessText}>Preferences</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={() => {
+              if (coursesData.length > 0) {
+                navigation.navigate('StudyGroups', {
+                  userId: currentUserId,
+                  courseCode: coursesData[0].course_code,
+                  courseName: coursesData[0].course_name
+                });
+              } else {
+                Alert.alert('No Courses', 'Please enroll in courses first to join study groups');
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#f59e0b20' }]}>
+              <Ionicons name="chatbubbles-outline" size={20} color="#f59e0b" />
+            </View>
+            <Text style={styles.quickAccessText}>Study Groups</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={() => {
+              if (coursesData.length > 1) {
+                Alert.alert(
+                  'Select Course',
+                  'Choose a course to view study resources',
+                  coursesData.map(course => ({
+                    text: course.course_code,
+                    onPress: () => navigation.navigate('StudyGroups', {
+                      userId: currentUserId,
+                      courseCode: course.course_code,
+                      courseName: course.course_name
+                    })
+                  })).concat([{ text: 'Cancel', style: 'cancel' }])
+                );
+              } else if (coursesData.length === 1) {
+                navigation.navigate('StudyGroups', {
+                  userId: currentUserId,
+                  courseCode: coursesData[0].course_code,
+                  courseName: coursesData[0].course_name
+                });
+              } else {
+                Alert.alert('No Courses', 'Please enroll in courses first');
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#ec489920' }]}>
+              <Ionicons name="library-outline" size={20} color="#ec4899" />
+            </View>
+            <Text style={styles.quickAccessText}>Resources</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.quickAccessButton}
+            onPress={() => {
+              Alert.alert(
+                'Analytics',
+                'View your academic performance analytics',
+                [{ text: 'OK' }]
+              );
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.quickAccessIcon, { backgroundColor: '#8b5cf620' }]}>
+              <Ionicons name="analytics-outline" size={20} color="#8b5cf6" />
+            </View>
+            <Text style={styles.quickAccessText}>Analytics</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         {tabs.map(tab => (
@@ -1388,6 +1548,8 @@ const AcademicsScreen = ({ route, navigation }) => {
   );
 };
 
+// All your existing styles remain exactly the same...
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1444,6 +1606,33 @@ const styles = StyleSheet.create({
   },
   addHeaderButton: {
     padding: 4,
+  },
+  quickAccessContainer: {
+    backgroundColor: '#1a1a1a',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a',
+    paddingVertical: 12,
+  },
+  quickAccessScroll: {
+    paddingHorizontal: 20,
+    gap: 12,
+  },
+  quickAccessButton: {
+    alignItems: 'center',
+    marginRight: 4,
+  },
+  quickAccessIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  quickAccessText: {
+    fontSize: 11,
+    color: '#888',
+    fontWeight: '600',
   },
   tabContainer: {
     flexDirection: 'row',
