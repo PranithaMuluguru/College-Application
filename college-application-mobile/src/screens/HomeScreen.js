@@ -319,7 +319,7 @@ const HomeScreen = ({ navigation, route }) => {
     { 
       name: 'Clubs', 
       icon: 'people-outline',
-      onPress: () => navigation.navigate('Clubs', { userId, userInfo, token })
+      onPress: () => navigation.navigate('ClubsHome', { userId, userInfo, token })
     },
   ];
 

@@ -291,7 +291,7 @@ const CourseManagementScreen = ({ route, navigation }) => {
                       style={styles.iconButton}
                       onPress={() => deleteCourse(course.id, course.course_name)}
                     >
-                      <Ionicons name="trash" size={18} color="#ef4444" />
+                      <Ionicons name="trash" size={18} color="#e46d6dff" />
                     </TouchableOpacity>
                   </View>
                 </View>

@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-// Import all your screens with correct paths
+// Auth & Core
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
 import OTPVerificationScreen from './src/screens/OTPVerificationScreen.js';
@@ -11,13 +11,9 @@ import MessMenuScreen from './src/screens/MessMenuScreen.js';
 import AcademicsScreen from './src/screens/AcademicsScreen';
 import SportsScreen from './src/screens/SportsScreen';
 import CampusScreen from './src/screens/CampusScreen';
-// import ClubsScreen from './src/screens/ClubsScreen';
-// import ClubDetailScreen from './src/screens/ClubDetailScreen';
-// import ClubAnnouncementsScreen from './src/screens/ClubAnnouncementsScreen';
-import BusScheduleScreen from './src/screens/BusScheduleScreen'; // Fixed import
+import BusScheduleScreen from './src/screens/BusScheduleScreen';
 
-
-//////////////////////////new imports below//////////////////////////
+// Social & Chat
 import ChatListScreen from './src/screens/chat/ChatListScreen';
 import ChatScreen from './src/screens/chat/ChatScreen';
 import GroupInfoScreen from './src/screens/chat/GroupInfoScreen';
@@ -29,12 +25,11 @@ import DiscussionDetailScreen from './src/screens/discussions/DiscussionDetailSc
 import NotificationsScreen from './src/screens/notifications/NotificationsScreen';
 import FollowersScreen from './src/screens/social/FollowersScreen';
 import FollowingScreen from './src/screens/social/FollowingScreen';
-//////////////////////////new imports above//////////////////////////
 import SettingsScreen from './src/screens/social/SettingsScreen.js';
 import EditProfileScreen from './src/screens/social/EditProfileScreen.js';
+import UserSearchScreen from './src/screens/social/UserSearchScreen';
 
-
-/////////market screen imports/////////
+// Marketplace
 import MarketplaceChatListScreen from './src/screens/market/MarketplaceChatListScreen';
 import SavedItemsScreen from './src/screens/market/SavedItemsScreen'; 
 import MarketplaceScreen from './src/screens/market/MarketplaceScreen';
@@ -44,10 +39,7 @@ import CreateListingScreen from './src/screens/market/CreateListingScreen';
 import MyListingsScreen from './src/screens/market/MyListingsScreen.js';
 import EditListingScreen from './src/screens/market/EditListingScreen';
 
-/////////market screen imports end/////////
-import UserSearchScreen from './src/screens/social/UserSearchScreen';
-
-//////// admin screens ////////
+// Admin
 import AdminLoginScreen from './src/screens/admin/AdminLoginScreen';
 import AdminDashboardScreen from './src/screens/admin/AdminDashboardScreen';
 import AdminManagementScreen from './src/screens/admin/AdminManagementScreen';
@@ -56,33 +48,37 @@ import CreateClubScreen from './src/screens/admin/CreateClubScreen';
 import CourseManagementScreen from './src/screens/admin/CourseManagementScreen.js';
 import UpdateClubHeadScreen from './src/screens/admin/UpdateClubHeadScreen.js';
 import AdminClubDetailScreen from './src/screens/admin/AdminClubDetailScreen.js';
-//////// admin screens end //////// 
+import EditClubScreen from './src/screens/admin/EditClubScreen.js';
+import AdminAIQuestionsScreen from './src/screens/admin/AdminAIQuestionsScreen';
 
-//// ADD CLUBS ///
+
+// Clubs - NEW FIXED IMPORTS
+import ClubsHomeScreen from './src/screens/clubs/ClubsHomeScreen.js';
+import CategoryClubsScreen from './src/screens/clubs/CategoryClubsScreen.js';
 import ClubDetailScreen from './src/screens/clubs/ClubDetailScreen.js';
-import ClubsScreen from './src/screens/clubs/ClubsScreen';
+import AllClubsScreen from './src/screens/clubs/AllClubsScreen.js';
+import MyClubsScreen from './src/screens/clubs/MyClubsScreen.js';
 import ClubHeadDashboardScreen from './src/screens/clubs/ClubHeadDashboardScreen.js';
 import CreateEventScreen from './src/screens/clubs/CreateEventScreen.js'; 
-import EventDetailScreen  from  './src/screens/clubs/EventDetailScreen.js';
+import EventDetailScreen from './src/screens/clubs/EventDetailScreen.js';
 import CreateAnnouncementScreen from './src/screens/clubs/CreateAnnouncementScreen.js';
-//// ADD CLUBS END ///  
 
-////ADD courses ///////
+// Courses
 import CoursesScreen from './src/screens/courses/CoursesScreen.js';
 import StudyBuddyScreen from './src/screens/courses/StudyBuddyScreen.js'; 
 import StudyGroupsScreen from './src/screens/courses/StudyGroupsScreen.js';
 import CourseGroupScreen from './src/screens/courses/CourseGroupScreen.js';
 import StudyPreferencesScreen from './src/screens/courses/StudyPreferencesScreen.js';
 
-
-//////////// add wellness ////////////
+// Wellness
 import WellnessHomeScreen from './src/screens/wellness/WellnessHomeScreen.js';
 import WellnessCheckInScreen from './src/screens/wellness/WellnessCheckInScreen.js';
 import RiskAssessmentScreen from './src/screens/wellness/RiskAssessmentScreen.js';
 import CounselorFormScreen from './src/screens/wellness/CounselorFormScreen.js';
 import MeditationScreen from './src/screens/wellness/MeditationScreen.js';
 import WellnessHistoryScreen from './src/screens/wellness/WellnessHistoryScreen';
-//////////// add wellness end ////////////
+
+// Maps
 import CampusMap from './src/screens/maps/CampusMaps.js';
 
 const Stack = createNativeStackNavigator();
@@ -91,6 +87,7 @@ export default function App() {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName="Login">
+        {/* ==================== AUTH ==================== */}
         <Stack.Screen 
           name="Login" 
           component={LoginScreen}
@@ -106,213 +103,321 @@ export default function App() {
           component={OTPVerificationScreen} 
           options={{ title: 'Verify Email' }} 
         />
+
+        {/* ==================== MAIN APP ==================== */}
         <Stack.Screen 
           name="Home" 
           component={HomeScreen} 
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="MessMenuScreen" component={MessMenuScreen} />
-        <Stack.Screen name="Academics" component={AcademicsScreen} />
-        
-        <Stack.Screen name="Sports" component={SportsScreen} />
-        <Stack.Screen name="Campus" component={CampusScreen} />
-        {/* <Stack.Screen name="Clubs" component={ClubsScreen} /> */}
-        {/* <Stack.Screen name="ClubDetail" component={ClubDetailScreen} /> */}
-        {/* <Stack.Screen name="ClubAnnouncements" component={ClubAnnouncementsScreen} /> */}
-        <Stack.Screen name="ChatList" component={ChatListScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Chat" component={ChatScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Feed" component={FeedScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Profile" component={ProfileScreen} options={{ headerShown: false }} />
-<Stack.Screen name="CreatePost" component={CreatePostScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Discussions" component={DiscussionsScreen} options={{ headerShown: false }} />
-<Stack.Screen name="DiscussionDetail" component={DiscussionDetailScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Notifications" component={NotificationsScreen} options={{ headerShown: false }} />
-<Stack.Screen name="Followers" component={FollowersScreen} options={{ headerShown: false }}/>
-        <Stack.Screen name="Following" component={FollowingScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="UserSearch" component={UserSearchScreen}options={{ headerShown: false }} />
-
-	<Stack.Screen name="GroupInfo" component={GroupInfoScreen} options={{ headerShown: false }} />
-        {/* Added BusScheduleScreen */}
+        <Stack.Screen 
+          name="MessMenuScreen" 
+          component={MessMenuScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Academics" 
+          component={AcademicsScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Sports" 
+          component={SportsScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Campus" 
+          component={CampusScreen} 
+          options={{ headerShown: false }}
+        />
         <Stack.Screen 
           name="BusSchedule" 
           component={BusScheduleScreen} 
           options={{ headerShown: false }}
         />
-        <Stack.Screen name="Marketplace" component={MarketplaceScreen} options={{ headerShown: false }} />
-<Stack.Screen name="ItemDetail" component={ItemDetailScreen}options={{ headerShown: false }} />
-<Stack.Screen name="CreateListing" component={CreateListingScreen}options={{ headerShown: false }} />
-<Stack.Screen 
-  name="MyListings" 
-  component={MyListingsScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="MarketplaceChat" 
-  component={MarketplaceChatScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="MarketplaceChatList" 
-  component={MarketplaceChatListScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="SavedItems" 
-  component={SavedItemsScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="EditListing" 
-  component={EditListingScreen}
-  options={{ headerShown: false }}
-/>
+        <Stack.Screen 
+          name="CampusMap" 
+          component={CampusMap} 
+          options={{ headerShown: false }}
+        />
 
-<Stack.Screen 
-  name="AdminLogin" 
-  component={AdminLoginScreen}
-  options={{ headerShown: false }}  // Add this
-/>
-<Stack.Screen 
-  name="AdminDashboard" 
-  component={AdminDashboardScreen}
-  options={{ headerShown: false }}  // Add this
-/>
-<Stack.Screen 
-  name="AdminManagement" 
-  component={AdminManagementScreen}
-  options={{ headerShown: false }}  // Add this
-/>
-    {/* Club Screens - User */}
-      <Stack.Screen 
-        name="Clubs" 
-        component={ClubsScreen}
-        options={{ title: 'Clubs' }}
-      />
-      <Stack.Screen 
-        name="ClubDetail" 
-        component={ClubDetailScreen}
-        options={{ title: 'Club Details' }}
-      />
-      <Stack.Screen 
-        name="EventDetail" 
-        component={EventDetailScreen}
-        options={{ title: 'Event Details' }}
-      />
-      
-      {/* Club Screens - Club Head */}
-      <Stack.Screen 
-        name="ClubHeadDashboard" 
-        component={ClubHeadDashboardScreen}
-        options={{ title: 'Club Dashboard' }}
-      />
-      <Stack.Screen 
-        name="CreateEvent" 
-        component={CreateEventScreen}
-        options={{ title: 'Create Event' }}
-      />
-      <Stack.Screen 
-        name="CreateAnnouncement" 
-        component={CreateAnnouncementScreen}
-        options={{ title: 'New Announcement' }}
-      />
-      
-      {/* Admin Club Management */}
-      <Stack.Screen 
-        name="ManageClubs" 
-        component={ManageClubsScreen}
-        options={{ title: 'Manage Clubs' }}
-      />
-      <Stack.Screen 
-        name="CreateClub" 
-        component={CreateClubScreen}
-        options={{ title: 'Create Club' }}
-      />
+        {/* ==================== CLUBS (NEW) ==================== */}
+        <Stack.Screen 
+          name="ClubsHome" 
+          component={ClubsHomeScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="CategoryClubs" 
+          component={CategoryClubsScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="ClubDetail" 
+          component={ClubDetailScreen}  
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="AllClubs" 
+          component={AllClubsScreen}  
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="MyClubs" 
+          component={MyClubsScreen}  
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="EventDetail" 
+          component={EventDetailScreen}
+          options={{ headerShown: false }}
+        />
+        
+        {/* Club Head Screens */}
+        <Stack.Screen 
+          name="ClubHeadDashboard" 
+          component={ClubHeadDashboardScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="CreateEvent" 
+          component={CreateEventScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="CreateAnnouncement" 
+          component={CreateAnnouncementScreen}
+          options={{ headerShown: false }}
+        />
 
-      <Stack.Screen 
-  name="Courses"
-  component={CoursesScreen}
-  options={{ title: 'My Courses' }}
-/>
+        {/* ==================== SOCIAL & CHAT ==================== */}
+        <Stack.Screen 
+          name="ChatList" 
+          component={ChatListScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Chat" 
+          component={ChatScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="GroupInfo" 
+          component={GroupInfoScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Feed" 
+          component={FeedScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Profile" 
+          component={ProfileScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="CreatePost" 
+          component={CreatePostScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Followers" 
+          component={FollowersScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="Following" 
+          component={FollowingScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="UserSearch" 
+          component={UserSearchScreen}
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="Settings" 
+          component={SettingsScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="EditProfile" 
+          component={EditProfileScreen} 
+          options={{ headerShown: false }}
+        />
 
-<Stack.Screen 
-  name="StudyBuddy"
-  component={StudyBuddyScreen}
-  options={{ title: 'Study Buddy' }}
-/>
+        {/* ==================== DISCUSSIONS ==================== */}
+        <Stack.Screen 
+          name="Discussions" 
+          component={DiscussionsScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="DiscussionDetail" 
+          component={DiscussionDetailScreen} 
+          options={{ headerShown: false }} 
+        />
 
-<Stack.Screen 
-  name="StudyGroups"
-  component={StudyGroupsScreen}
-  options={{ title: 'Study Groups' }}
-/>
+        {/* ==================== NOTIFICATIONS ==================== */}
+        <Stack.Screen 
+          name="Notifications" 
+          component={NotificationsScreen} 
+          options={{ headerShown: false }} 
+        />
 
-{/* Admin Course Management */}
-<Stack.Screen 
-  name="CourseManagement"
-  component={CourseManagementScreen}
-  options={{ title: 'Manage Courses' }}
+        {/* ==================== MARKETPLACE ==================== */}
+        <Stack.Screen 
+          name="Marketplace" 
+          component={MarketplaceScreen} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="ItemDetail" 
+          component={ItemDetailScreen}
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="CreateListing" 
+          component={CreateListingScreen}
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="MyListings" 
+          component={MyListingsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="EditListing" 
+          component={EditListingScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="MarketplaceChat" 
+          component={MarketplaceChatScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="MarketplaceChatList" 
+          component={MarketplaceChatListScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="SavedItems" 
+          component={SavedItemsScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* ==================== COURSES ==================== */}
+        <Stack.Screen 
+          name="Courses"
+          component={CoursesScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="StudyBuddy"
+          component={StudyBuddyScreen}
+          options={{ headerShown: 'study buddies' }}
+        />
+        <Stack.Screen 
+          name="StudyGroups"
+          component={StudyGroupsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="CourseGroup" 
+          component={CourseGroupScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="studyPreferences" 
+          component={StudyPreferencesScreen}
+          options={{ headerShown: 'preferences' }}
+        />
+
+        {/* ==================== WELLNESS ==================== */}
+        <Stack.Screen 
+          name="WellnessHome" 
+          component={WellnessHomeScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="WellnessCheckIn" 
+          component={WellnessCheckInScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="RiskAssessment" 
+          component={RiskAssessmentScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="CounselorForm" 
+          component={CounselorFormScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="Meditation" 
+          component={MeditationScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="WellnessHistory" 
+          component={WellnessHistoryScreen}
+          options={{ headerShown: false }}
+        />
+
+        {/* ==================== ADMIN ==================== */}
+        <Stack.Screen 
+          name="AdminLogin" 
+          component={AdminLoginScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="AdminDashboard" 
+          component={AdminDashboardScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="AdminManagement" 
+          component={AdminManagementScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="ManageClubs" 
+          component={ManageClubsScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="CreateClub" 
+          component={CreateClubScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="EditClub" 
+          component={EditClubScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="UpdateClubHead" 
+          component={UpdateClubHeadScreen} 
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="AdminUpdateClubHead" 
+          component={AdminClubDetailScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+          name="CourseManagement"
+          component={CourseManagementScreen}
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen 
+  name="AdminAIQuestions" 
+  component={AdminAIQuestionsScreen}
+  options={{ title: 'AI Questions' }}
 />
-<Stack.Screen 
-  name="CourseGroup" 
-  component={CourseGroupScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="AdminUpdateClubHead" 
-  component={AdminClubDetailScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="studyPreferences" 
-  component={StudyPreferencesScreen}
-  options={{ headerShown: false }}
-/>
-      <Stack.Screen 
-        name="WellnessHome" 
-        component={WellnessHomeScreen} 
-        options={{ title: 'Wellness', headerShown: false }}
-      />
-      <Stack.Screen
-        name="WellnessCheckIn" 
-        component={WellnessCheckInScreen} 
-        options={{ title: 'Daily Check-in' }}
-      />
-      <Stack.Screen
-        name="RiskAssessment" 
-        component={RiskAssessmentScreen} 
-        options={{ title: 'Risk Assessment' }}
-      />
-      <Stack.Screen
-        name="CounselorForm" 
-        component={CounselorFormScreen} 
-        options={{ title: 'Contact Counselor' }}
-      />
-      <Stack.Screen
-        name="Meditation" 
-        component={MeditationScreen} 
-        options={{ title: 'Meditation' }}
-      />
-      <Stack.Screen 
-  name="WellnessHistory" 
-  component={WellnessHistoryScreen}
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="Settings" 
-  component={SettingsScreen} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="EditProfile" 
-  component={EditProfileScreen} 
-  options={{ headerShown: false }}
-/>
-<Stack.Screen 
-  name="CampusMap" 
-  component={CampusMap} 
-  options={{ headerShown: false }}
-/>
-      
 
       </Stack.Navigator>
     </NavigationContainer>

@@ -163,7 +163,14 @@ const AdminDashboardScreen = ({ navigation, route }) => {
       color: '#10b981',
       screen: 'AdminSystemHealth',
       description: 'System status'
-    }
+    },
+    {
+      name: 'AI Questions',
+  icon: 'help-circle',
+  color: '#f59e0b',
+  screen: 'AdminAIQuestions',
+  description: 'Answer unanswered questions'
+}
   ];
 
   const filteredFeatures = adminFeatures.filter(feature => {

@@ -122,8 +122,7 @@ class User(Base):
     # Notifications
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
-    study_preference = relationship("StudyPreference", back_populates="user", uselist=False)
-
+    study_preferences = relationship("StudyPreference", back_populates="user", uselist=False)
 class Course(Base):
     __tablename__ = "courses"
     
@@ -624,14 +623,14 @@ class AdminActivityLog(Base):
 
 
 
-# Add these to your models.py
+# ==================== CLUBS ====================
 
 class Club(Base):
     __tablename__ = "clubs"
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False, unique=True)
-    category = Column(String, nullable=False)  # Sports, Technical, Cultural
+    category = Column(String, nullable=False)  # Sports, Technical, Cultural, etc.
     description = Column(Text, nullable=False)
     logo_url = Column(String, nullable=True)
     cover_url = Column(String, nullable=True)
@@ -640,10 +639,12 @@ class Club(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Relationships
     club_head = relationship("User", backref="headed_clubs")
     events = relationship("ClubEvent", back_populates="club", cascade="all, delete-orphan")
     announcements = relationship("ClubAnnouncement", back_populates="club", cascade="all, delete-orphan")
     followers = relationship("ClubFollower", back_populates="club", cascade="all, delete-orphan")
+
 
 class ClubEvent(Base):
     __tablename__ = "club_events"
@@ -661,9 +662,11 @@ class ClubEvent(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Relationships
     club = relationship("Club", back_populates="events")
     registrations = relationship("EventRegistration", back_populates="event", cascade="all, delete-orphan")
     likes = relationship("EventLike", back_populates="event", cascade="all, delete-orphan")
+
 
 class ClubAnnouncement(Base):
     __tablename__ = "club_announcements"
@@ -675,7 +678,9 @@ class ClubAnnouncement(Base):
     priority = Column(String, default="normal")  # low, normal, high
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Relationships
     club = relationship("Club", back_populates="announcements")
+
 
 class ClubFollower(Base):
     __tablename__ = "club_followers"
@@ -685,12 +690,15 @@ class ClubFollower(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Relationships
     club = relationship("Club", back_populates="followers")
     user = relationship("User", backref="followed_clubs")
     
+    # Constraints
     __table_args__ = (
         UniqueConstraint('club_id', 'user_id', name='unique_club_follower'),
     )
+
 
 class EventRegistration(Base):
     __tablename__ = "event_registrations"
@@ -700,12 +708,15 @@ class EventRegistration(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Relationships
     event = relationship("ClubEvent", back_populates="registrations")
     user = relationship("User", backref="event_registrations")
     
+    # Constraints
     __table_args__ = (
         UniqueConstraint('event_id', 'user_id', name='unique_event_registration'),
     )
+
 
 class EventLike(Base):
     __tablename__ = "event_likes"
@@ -715,13 +726,14 @@ class EventLike(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     
+    # Relationships
     event = relationship("ClubEvent", back_populates="likes")
     user = relationship("User", backref="liked_events")
     
+    # Constraints
     __table_args__ = (
         UniqueConstraint('event_id', 'user_id', name='unique_event_like'),
     )
-# Add these imports at the top if not present
 
 
 # ==================== COURSE MANAGEMENT MODELS ====================
@@ -804,38 +816,21 @@ class StudyBuddyRequest(Base):
     # Add these to your models.py - These are the ONLY missing ones
 
 class StudyPreference(Base):
-    """Study preferences for matching algorithm"""
     __tablename__ = "study_preferences"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    
-    # Study environment
-    study_environment = Column(String, default='quiet')  # quiet, social, library, cafe
-    
-    # Time preferences
-    preferred_study_time = Column(String, default='evening')  # morning, afternoon, evening, night
-    
-    # Learning style
-    learning_style = Column(String, default='visual')  # visual, auditory, kinesthetic, reading
-    
-    # Session preferences
-    session_duration = Column(Integer, default=120)  # minutes: 30, 60, 120, 180
-    
-    # Group size
-    group_size = Column(String, default='small')  # solo, small (2-3), medium (4-6), large (7+)
-    
-    # Communication style
-    communication_style = Column(String, default='balanced')  # silent, minimal, balanced, collaborative
-    
-    # Primary goal
-    primary_goal = Column(String, default='improve_grades')  # improve_grades, understand_concepts, exam_prep, project_help
-    
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    study_environment = Column(String(50))
+    preferred_study_time = Column(String(50))
+    learning_style = Column(String(50))
+    session_duration = Column(Integer, default=120)  # in minutes
+    group_size = Column(String(50), default='small')
+    communication_style = Column(String(50), default='balanced')
+    primary_goal = Column(String(50), default='improve_grades')
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationship
-    user = relationship("User", back_populates="study_preference")
+    user = relationship("User", back_populates="study_preferences")
 
 
 class StudyGoal(Base):
@@ -855,6 +850,8 @@ class StudyGoal(Base):
     
     creator = relationship("User", foreign_keys=[created_by])
     participants = relationship("StudyGoalParticipant", back_populates="goal")
+
+    
 
 
 class StudyGoalParticipant(Base):

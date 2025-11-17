@@ -1,8 +1,8 @@
-# ai_routes.py - Complete matching system
+# ai_routes.py - Complete with preference requirement
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, text
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
@@ -51,35 +51,20 @@ class StudyBuddyRequestInput(BaseModel):
     message: Optional[str] = None
 
 
-class StudyGoalInput(BaseModel):
-    course_code: str
-    target_grade: str
-    target_date: str
-    description: str
-
-
 # ==================== HELPER FUNCTIONS ====================
 
-def get_user_preferences(user_id: int, db: Session) -> dict:
-    """Get user preferences or return defaults"""
+def get_user_preferences(user_id: int, db: Session) -> Optional[dict]:
+    """Get user preferences - returns None if not set"""
     prefs = db.query(models.StudyPreference).filter(
         models.StudyPreference.user_id == user_id
     ).first()
     
     if not prefs:
-        return {
-            'environment': 'quiet',
-            'preferred_time': 'evening',
-            'learning_style': 'visual',
-            'session_duration': 120,
-            'group_size': 'small',
-            'communication_style': 'balanced',
-            'primary_goal': 'improve_grades'
-        }
+        return None
     
     return {
-        'environment': prefs.study_environment,
-        'preferred_time': prefs.preferred_study_time,
+        'study_environment': prefs.study_environment,
+        'preferred_study_time': prefs.preferred_study_time,
         'learning_style': prefs.learning_style,
         'session_duration': prefs.session_duration,
         'group_size': prefs.group_size,
@@ -191,16 +176,16 @@ def calculate_study_style_compatibility(user1_prefs: dict, user2_prefs: dict) ->
     total_factors = 0
     
     # Environment (weight: 2)
-    if user1_prefs['environment'] == user2_prefs['environment']:
+    if user1_prefs['study_environment'] == user2_prefs['study_environment']:
         compatibility_score += 2
-    elif is_compatible_environment(user1_prefs['environment'], user2_prefs['environment']):
+    elif is_compatible_environment(user1_prefs['study_environment'], user2_prefs['study_environment']):
         compatibility_score += 1
     total_factors += 2
     
     # Time (weight: 2)
-    if user1_prefs['preferred_time'] == user2_prefs['preferred_time']:
+    if user1_prefs['preferred_study_time'] == user2_prefs['preferred_study_time']:
         compatibility_score += 2
-    elif is_adjacent_time(user1_prefs['preferred_time'], user2_prefs['preferred_time']):
+    elif is_adjacent_time(user1_prefs['preferred_study_time'], user2_prefs['preferred_study_time']):
         compatibility_score += 1
     total_factors += 2
     
@@ -256,8 +241,6 @@ def find_complementary_skills(user1_grades: dict, user2_grades: dict) -> List[st
 
 # ==================== MAIN ENDPOINTS ====================
 
-# ai_routes.py - Update the main endpoint
-
 @router.get("/study-buddies/{user_id}", response_model=List[StudyBuddyMatch])
 async def find_study_buddies(
     user_id: int,
@@ -265,106 +248,306 @@ async def find_study_buddies(
     max_results: int = Query(20, le=50),
     db: Session = Depends(get_database)
 ):
-    """AI-powered study buddy matching"""
+    """AI-powered study buddy matching - FIXED"""
     try:
+        print(f"\n=== STUDY BUDDY REQUEST ===")
+        print(f"User ID: {user_id}")
+        print(f"Course Code: {course_code}")
+        
         current_user = db.query(models.User).filter(models.User.id == user_id).first()
         if not current_user:
+            print(f"ERROR: User {user_id} not found")
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Get enrollments
-        user_enrollments = db.query(models.CourseEnrollment).filter(
-            models.CourseEnrollment.user_id == user_id,
-            models.CourseEnrollment.is_active == True
-        ).all()
+        print(f"Current user: {current_user.full_name}")
         
-        user_course_ids = [e.course_id for e in user_enrollments]
+        # Check if user has preferences
+        user_prefs = get_user_preferences(user_id, db)
+        if not user_prefs:
+            print(f"ERROR: User {user_id} has no preferences")
+            raise HTTPException(
+                status_code=400, 
+                detail="Please set your study preferences first"
+            )
         
-        # FIX: Handle "undefined" or invalid course_code
-        if course_code and course_code != "undefined" and course_code.strip():
-            course = db.query(models.CourseCatalog).filter(
-                models.CourseCatalog.course_code == course_code
-            ).first()
-            if course:
-                user_course_ids = [course.id]
+        print(f"User preferences: {user_prefs}")
+        
+        # FIX: Try different table names and approaches
+        user_course_ids = []
+        
+        # Method 1: Try CourseEnrollment
+        try:
+            user_enrollments = db.query(models.CourseEnrollment).filter(
+                models.CourseEnrollment.user_id == user_id,
+                models.CourseEnrollment.is_active == True
+            ).all()
+            
+            if user_enrollments:
+                user_course_ids = [e.course_id for e in user_enrollments]
+                print(f"✅ Method 1 (CourseEnrollment): Found {len(user_course_ids)} course IDs")
             else:
-                # Course not found, return empty
+                print("❌ Method 1: No enrollments found")
+        except Exception as e:
+            print(f"❌ Method 1 failed: {e}")
+        
+        # Method 2: Try Course model
+        if not user_course_ids:
+            try:
+                user_courses = db.query(models.Course).filter(
+                    models.Course.user_id == user_id
+                ).all()
+                
+                if user_courses:
+                    user_course_ids = [c.id for c in user_courses]
+                    print(f"✅ Method 2 (Course): Found {len(user_course_ids)} course IDs")
+                else:
+                    print("❌ Method 2: No courses found")
+            except Exception as e:
+                print(f"❌ Method 2 failed: {e}")
+        
+        # Method 3: Direct SQL query
+        if not user_course_ids:
+            try:
+                # Check if course_enrollments table exists
+                result = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='course_enrollments'"))
+                if result.fetchone():
+                    query = text(f"SELECT course_id FROM course_enrollments WHERE user_id = {user_id} AND is_active = 1")
+                    result = db.execute(query)
+                    rows = result.fetchall()
+                    if rows:
+                        user_course_ids = [row[0] for row in rows]
+                        print(f"✅ Method 3 (SQL): Found {len(user_course_ids)} course IDs")
+                    else:
+                        print("❌ Method 3: No enrollments found")
+                else:
+                    print("❌ Method 3: course_enrollments table doesn't exist")
+            except Exception as e:
+                print(f"❌ Method 3 failed: {e}")
+        
+        # Method 4: Check if course_catalog table exists
+        if not user_course_ids:
+            try:
+                result = db.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='course_catalog'"))
+                if result.fetchone():
+                    print("✅ course_catalog table exists")
+                else:
+                    print("❌ course_catalog table doesn't exist")
+            except Exception as e:
+                print(f"❌ Method 4 failed: {e}")
+        
+        # Filter by course_code if provided
+        if course_code and course_code != "undefined" and course_code.strip():
+            print(f"Filtering by course: {course_code}")
+            try:
+                course = db.query(models.CourseCatalog).filter(
+                    models.CourseCatalog.course_code == course_code
+                ).first()
+                if course:
+                    user_course_ids = [course.id]
+                    print(f"✅ Found course: {course.course_name} (ID: {course.id})")
+                else:
+                    print(f"❌ Course {course_code} not found")
+                    return []
+            except Exception as e:
+                print(f"❌ Course lookup failed: {e}")
                 return []
         
         if not user_course_ids:
+            print("❌ No course IDs to match")
             return []
         
-        # Find potential buddies
-        potential_buddies = db.query(models.User).join(
-            models.CourseEnrollment,
-            models.CourseEnrollment.user_id == models.User.id
-        ).filter(
-            models.CourseEnrollment.course_id.in_(user_course_ids),
-            models.CourseEnrollment.is_active == True,
-            models.User.id != user_id
-        ).distinct().all()
+        print(f"Target course IDs: {user_course_ids}")
+        
+        # Find potential buddies - try different approaches
+        potential_buddies = []
+        
+        # Method 1: Using CourseEnrollment
+        try:
+            potential_buddies = db.query(models.User).join(
+                models.CourseEnrollment,
+                models.CourseEnrollment.user_id == models.User.id
+            ).filter(
+                models.CourseEnrollment.course_id.in_(user_course_ids),
+                models.CourseEnrollment.is_active == True,
+                models.User.id != user_id
+            ).distinct().all()
+            
+            if potential_buddies:
+                print(f"✅ Found {len(potential_buddies)} potential buddies using CourseEnrollment")
+            else:
+                print("❌ No potential buddies found with CourseEnrollment")
+        except Exception as e:
+            print(f"❌ CourseEnrollment join failed: {e}")
+        
+        # Method 2: Using Course model
+        if not potential_buddies:
+            try:
+                potential_buddies = db.query(models.User).join(
+                    models.Course,
+                    models.Course.user_id == models.User.id
+                ).filter(
+                    models.Course.id.in_(user_course_ids),
+                    models.User.id != user_id
+                ).distinct().all()
+                
+                if potential_buddies:
+                    print(f"✅ Found {len(potential_buddies)} potential buddies using Course")
+                else:
+                    print("❌ No potential buddies found with Course")
+            except Exception as e:
+                print(f"❌ Course join failed: {e}")
+        
+        # Method 3: Direct SQL
+        if not potential_buddies:
+            try:
+                course_ids_str = ','.join(map(str, user_course_ids))
+                query = text(f"""
+                    SELECT DISTINCT u.* FROM users u
+                    JOIN course_enrollments ce ON ce.user_id = u.id
+                    WHERE ce.course_id IN ({course_ids_str})
+                    AND ce.is_active = 1
+                    AND u.id != {user_id}
+                """)
+                result = db.execute(query)
+                rows = result.fetchall()
+                
+                if rows:
+                    # Convert to User objects
+                    potential_buddies = []
+                    for row in rows:
+                        user = models.User()
+                        user.id = row[0]
+                        user.full_name = row[3]  # Adjust based on your actual column order
+                        user.department = row[4]
+                        user.year = row[5]
+                        user.college_id = row[2]
+                        potential_buddies.append(user)
+                    print(f"✅ Found {len(potential_buddies)} potential buddies using SQL")
+                else:
+                    print("❌ No potential buddies found with SQL")
+            except Exception as e:
+                print(f"❌ SQL query failed: {e}")
         
         if not potential_buddies:
+            print("❌ No potential buddies found - returning empty list")
             return []
+        
+        print(f"✅ Total potential buddies: {len(potential_buddies)}")
         
         # Get user data
         user_grades = {}
-        for enrollment in user_enrollments:
-            if enrollment.grade:
-                user_grades[enrollment.course.course_code] = enrollment.grade
-        
         user_schedule = []
-        user_timetable = db.query(models.TimetableEntry).filter(
-            models.TimetableEntry.user_id == user_id
-        ).all()
-        for tt in user_timetable:
-            user_schedule.append(f"{tt.day_of_week} {tt.start_time}-{tt.end_time}")
         
-        user_prefs = get_user_preferences(user_id, db)
+        # Try to get grades from GradeEntry
+        try:
+            grade_entries = db.query(models.GradeEntry).filter(
+                models.GradeEntry.user_id == user_id
+            ).all()
+            for entry in grade_entries:
+                user_grades[entry.course_name] = entry.grade
+            print(f"Found {len(user_grades)} grade entries")
+        except Exception as e:
+            print(f"Grade lookup failed: {e}")
+        
+        # Try to get schedule from TimetableEntry
+        try:
+            timetable_entries = db.query(models.TimetableEntry).filter(
+                models.TimetableEntry.user_id == user_id
+            ).all()
+            for tt in timetable_entries:
+                user_schedule.append(f"{tt.day_of_week} {tt.start_time}-{tt.end_time}")
+            print(f"Found {len(user_schedule)} timetable entries")
+        except Exception as e:
+            print(f"Timetable lookup failed: {e}")
         
         # Get following status
         following_ids = set()
-        follows = db.query(models.Follow).filter(
-            models.Follow.follower_id == user_id
-        ).all()
-        for follow in follows:
-            if follow.status == 'accepted':
-                following_ids.add(follow.following_id)
+        try:
+            follows = db.query(models.Follow).filter(
+                models.Follow.follower_id == user_id
+            ).all()
+            for follow in follows:
+                if follow.status == 'accepted':
+                    following_ids.add(follow.following_id)
+            print(f"Following {len(following_ids)} users")
+        except Exception as e:
+            print(f"Follow lookup failed: {e}")
         
         matches = []
         
         for buddy in potential_buddies:
-            buddy_enrollments = db.query(models.CourseEnrollment).filter(
-                models.CourseEnrollment.user_id == buddy.id,
-                models.CourseEnrollment.is_active == True
-            ).all()
+            print(f"\n--- Processing buddy: {buddy.full_name} ---")
             
-            buddy_course_ids = [e.course_id for e in buddy_enrollments]
-            common_course_ids = set(user_course_ids) & set(buddy_course_ids)
-            
-            if not common_course_ids:
+            # Skip buddies without preferences
+            buddy_prefs = get_user_preferences(buddy.id, db)
+            if not buddy_prefs:
+                print("Skipping - no preferences")
                 continue
             
+            # Get buddy courses - try different models
+            buddy_course_ids = []
             common_courses = []
+            
+            # Try CourseEnrollment first
+            try:
+                buddy_enrollments = db.query(models.CourseEnrollment).filter(
+                    models.CourseEnrollment.user_id == buddy.id,
+                    models.CourseEnrollment.is_active == True
+                ).all()
+                buddy_course_ids = [e.course_id for e in buddy_enrollments]
+                common_course_ids = set(user_course_ids) & set(buddy_course_ids)
+                print(f"Buddy enrollments: {len(buddy_enrollments)}")
+            except Exception as e:
+                print(f"Buddy enrollment lookup failed: {e}")
+            
+            # Try Course model if CourseEnrollment fails
+            if not buddy_course_ids:
+                try:
+                    buddy_courses = db.query(models.Course).filter(
+                        models.Course.user_id == buddy.id
+                    ).all()
+                    buddy_course_ids = [c.id for c in buddy_courses]
+                    common_course_ids = set(user_course_ids) & set(buddy_course_ids)
+                    print(f"Buddy courses: {len(buddy_courses)}")
+                except Exception as e:
+                    print(f"Buddy course lookup failed: {e}")
+            
+            if not common_course_ids:
+                print("Skipping - no common courses")
+                continue
+            
+            # Get course names for common courses
             for cid in common_course_ids:
-                course = db.query(models.CourseCatalog).filter(
-                    models.CourseCatalog.id == cid
-                ).first()
-                if course:
-                    common_courses.append(course.course_code)
+                try:
+                    course = db.query(models.CourseCatalog).filter(
+                        models.CourseCatalog.id == cid
+                    ).first()
+                    if course:
+                        common_courses.append(course.course_code)
+                except Exception as e:
+                    print(f"Course name lookup failed: {e}")
             
+            # Get buddy grades and schedule
             buddy_grades = {}
-            for enrollment in buddy_enrollments:
-                if enrollment.grade:
-                    buddy_grades[enrollment.course.course_code] = enrollment.grade
-            
             buddy_schedule = []
-            buddy_timetable = db.query(models.TimetableEntry).filter(
-                models.TimetableEntry.user_id == buddy.id
-            ).all()
-            for tt in buddy_timetable:
-                buddy_schedule.append(f"{tt.day_of_week} {tt.start_time}-{tt.end_time}")
             
-            buddy_prefs = get_user_preferences(buddy.id, db)
+            try:
+                buddy_grade_entries = db.query(models.GradeEntry).filter(
+                    models.GradeEntry.user_id == buddy.id
+                ).all()
+                for entry in buddy_grade_entries:
+                    buddy_grades[entry.course_name] = entry.grade
+            except Exception as e:
+                print(f"Buddy grade lookup failed: {e}")
+            
+            try:
+                buddy_timetable = db.query(models.TimetableEntry).filter(
+                    models.TimetableEntry.user_id == buddy.id
+                ).all()
+                for tt in buddy_timetable:
+                    buddy_schedule.append(f"{tt.day_of_week} {tt.start_time}-{tt.end_time}")
+            except Exception as e:
+                print(f"Buddy timetable lookup failed: {e}")
             
             # Calculate scores
             grade_similarity = calculate_grade_similarity(user_grades, buddy_grades)
@@ -382,12 +565,18 @@ async def find_study_buddies(
                 availability_score * 0.2
             ) * 100
             
-            follow = db.query(models.Follow).filter(
-                models.Follow.follower_id == user_id,
-                models.Follow.following_id == buddy.id
-            ).first()
+            print(f"Match score: {match_score:.2f}%")
             
-            follow_status = follow.status if follow else None
+            # Check follow status
+            follow_status = None
+            try:
+                follow = db.query(models.Follow).filter(
+                    models.Follow.follower_id == user_id,
+                    models.Follow.following_id == buddy.id
+                ).first()
+                follow_status = follow.status if follow else None
+            except Exception as e:
+                print(f"Follow status lookup failed: {e}")
             
             matches.append(StudyBuddyMatch(
                 user_id=buddy.id,
@@ -406,14 +595,23 @@ async def find_study_buddies(
             ))
         
         matches.sort(key=lambda x: x.match_score, reverse=True)
+        
+        print(f"\n=== FINAL RESULTS ===")
+        print(f"Total matches: {len(matches)}")
+        print(f"Returning: {min(len(matches), max_results)} matches")
+        
         return matches[:max_results]
         
+    except HTTPException:
+        raise
     except Exception as e:
-        # Log the actual error
-        print(f"ERROR in study-buddies endpoint: {str(e)}")
+        print(f"\n=== ERROR ===")
+        print(f"Error: {str(e)}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/preferences/{user_id}")
 async def save_study_preferences(
     user_id: int,
@@ -459,21 +657,20 @@ async def get_study_preferences(
         if not prefs:
             return {
                 "has_preferences": False,
-                "preferences": get_user_preferences(user_id, db)
+                "preferences": {}
             }
         
-        return {
-            "has_preferences": True,
-            "preferences": {
-                "study_environment": prefs.study_environment,
-                "preferred_study_time": prefs.preferred_study_time,
-                "learning_style": prefs.learning_style,
-                "session_duration": prefs.session_duration,
-                "group_size": prefs.group_size,
-                "communication_style": prefs.communication_style,
-                "primary_goal": prefs.primary_goal
-            }
+        return {"has_preferences": True,
+        "preferences": {
+            "study_environment": prefs.study_environment,
+            "preferred_study_time": prefs.preferred_study_time,
+            "learning_style": prefs.learning_style,
+            "session_duration": prefs.session_duration,
+            "group_size": prefs.group_size,
+            "communication_style": prefs.communication_style,
+            "primary_goal": prefs.primary_goal
         }
+    }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,5 +1,5 @@
-# club_routes.py
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+# club_routes.py (Fixed version)
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, desc
 from typing import List, Optional
@@ -45,7 +45,7 @@ class EventUpdate(BaseModel):
 class AnnouncementCreate(BaseModel):
     title: str
     content: str
-    priority: str = "normal"  # low, normal, high
+    priority: str = "normal"
 
 # Helper function
 def is_club_head(user_id: int, club_id: int, db: Session) -> bool:
@@ -55,7 +55,7 @@ def is_club_head(user_id: int, club_id: int, db: Session) -> bool:
     ).first()
     return club is not None
 
-# ==================== PUBLIC ENDPOINTS ====================
+# ==================== PUBLIC ENDPOINTS (NO TOKEN REQUIRED) ====================
 
 @router.get("/")
 async def get_all_clubs(
@@ -63,7 +63,7 @@ async def get_all_clubs(
     search: Optional[str] = None,
     db: Session = Depends(get_database)
 ):
-    """Get all active clubs with optional filtering"""
+    """Get all active clubs - PUBLIC"""
     query = db.query(models.Club).filter(models.Club.is_active == True)
     
     if category:
@@ -94,123 +94,27 @@ async def get_all_clubs(
             "logo_url": club.logo_url,
             "cover_url": club.cover_url,
             "follower_count": follower_count,
-            "upcoming_events": upcoming_events,
-            "created_at": club.created_at.isoformat()
+            "event_count": upcoming_events,
+            "created_at": club.created_at.isoformat() if club.created_at else None
         })
     
     return result
 
-@router.get("/trending")
-async def get_trending_clubs(
-    limit: int = Query(10, le=50),
-    db: Session = Depends(get_database)
-):
-    """Get trending clubs based on recent activity"""
-    # Get clubs with most recent events and follower growth
-    query = db.query(models.Club).filter(
+@router.get("/categories")
+async def get_categories(db: Session = Depends(get_database)):
+    """Get all club categories - PUBLIC"""
+    categories = db.query(models.Club.category).filter(
         models.Club.is_active == True
-    ).join(models.ClubEvent).filter(
-        models.ClubEvent.event_date >= datetime.utcnow() - timedelta(days=30)
-    ).group_by(models.Club.id).order_by(
-        func.count(models.ClubEvent.id).desc()
-    ).limit(limit)
+    ).distinct().all()
     
-    clubs = query.all()
-    
-    result = []
-    for club in clubs:
-        follower_count = db.query(models.ClubFollower).filter(
-            models.ClubFollower.club_id == club.id
-        ).count()
-        
-        recent_events = db.query(models.ClubEvent).filter(
-            models.ClubEvent.club_id == club.id,
-            models.ClubEvent.event_date >= datetime.utcnow()
-        ).count()
-        
-        result.append({
-            "id": club.id,
-            "name": club.name,
-            "category": club.category,
-            "follower_count": follower_count,
-            "upcoming_events": recent_events,
-            "logo_url": club.logo_url
-        })
-    
-    return result
-
-@router.get("/upcoming-events")
-async def get_upcoming_events(
-    limit: int = Query(20, le=100),
-    db: Session = Depends(get_database)
-):
-    """Get all upcoming events across clubs"""
-    events = db.query(models.ClubEvent).join(models.Club).filter(
-        models.ClubEvent.event_date >= datetime.utcnow(),
-        models.Club.is_active == True
-    ).order_by(
-        models.ClubEvent.event_date.asc()
-    ).limit(limit).all()
-    
-    result = []
-    for event in events:
-        registration_count = db.query(models.EventRegistration).filter(
-            models.EventRegistration.event_id == event.id
-        ).count()
-        
-        like_count = db.query(models.EventLike).filter(
-            models.EventLike.event_id == event.id
-        ).count()
-        
-        result.append({
-            "id": event.id,
-            "title": event.title,
-            "description": event.description[:100] + "...",
-            "event_date": event.event_date.isoformat(),
-            "location": event.location,
-            "club_name": event.club.name,
-            "club_id": event.club_id,
-            "registration_count": registration_count,
-            "max_participants": event.max_participants,
-            "like_count": like_count,
-            "image_url": event.image_url,
-            "category": event.club.category
-        })
-    
-    return result
-
-@router.get("/recent-announcements")
-async def get_recent_announcements(
-    limit: int = Query(10, le=50),
-    db: Session = Depends(get_database)
-):
-    """Get recent announcements from all clubs"""
-    announcements = db.query(models.ClubAnnouncement).join(models.Club).filter(
-        models.Club.is_active == True
-    ).order_by(
-        models.ClubAnnouncement.created_at.desc()
-    ).limit(limit).all()
-    
-    result = []
-    for ann in announcements:
-        result.append({
-            "id": ann.id,
-            "title": ann.title,
-            "content": ann.content[:100] + "...",
-            "priority": ann.priority,
-            "club_name": ann.club.name,
-            "club_id": ann.club_id,
-            "created_at": ann.created_at.isoformat()
-        })
-    
-    return result
+    return [{"id": cat[0], "name": cat[0]} for cat in categories]
 
 @router.get("/{club_id}")
 async def get_club_details(
     club_id: int,
     db: Session = Depends(get_database)
 ):
-    """Get detailed information about a specific club"""
+    """Get detailed club information - PUBLIC"""
     club = db.query(models.Club).filter(
         models.Club.id == club_id,
         models.Club.is_active == True
@@ -229,12 +133,16 @@ async def get_club_details(
         models.ClubFollower.club_id == club.id
     ).count()
     
-    # Get upcoming events
-    upcoming_events = db.query(models.ClubEvent).filter(
+    # Get events
+    events = db.query(models.ClubEvent).filter(
         models.ClubEvent.club_id == club.id,
-        models.ClubEvent.event_date >= datetime.utcnow(),
-        models.ClubEvent.status == "scheduled"
-    ).order_by(models.ClubEvent.event_date).limit(5).all()
+        models.ClubEvent.event_date >= datetime.utcnow()
+    ).order_by(models.ClubEvent.event_date).limit(10).all()
+    
+    # Get announcements
+    announcements = db.query(models.ClubAnnouncement).filter(
+        models.ClubAnnouncement.club_id == club.id
+    ).order_by(models.ClubAnnouncement.created_at.desc()).limit(5).all()
     
     return {
         "id": club.id,
@@ -244,17 +152,32 @@ async def get_club_details(
         "logo_url": club.logo_url,
         "cover_url": club.cover_url,
         "follower_count": follower_count,
+        "is_following": False,  # Default for public view
         "club_head": {
             "name": head.full_name,
             "email": head.email
         } if head else None,
-        "upcoming_events": [{
+        "events": [{
             "id": event.id,
             "title": event.title,
-            "date": event.event_date.isoformat(),
-            "location": event.location
-        } for event in upcoming_events],
-        "created_at": club.created_at.isoformat()
+            "description": event.description,
+            "event_date": event.event_date.isoformat(),
+            "location": event.location,
+            "status": event.status,
+            "registration_count": db.query(models.EventRegistration).filter(
+                models.EventRegistration.event_id == event.id
+            ).count(),
+            "max_participants": event.max_participants,
+            "image_url": event.image_url
+        } for event in events],
+        "announcements": [{
+            "id": ann.id,
+            "title": ann.title,
+            "content": ann.content,
+            "priority": ann.priority,
+            "created_at": ann.created_at.isoformat()
+        } for ann in announcements],
+        "created_at": club.created_at.isoformat() if club.created_at else None
     }
 
 @router.get("/{club_id}/events")
@@ -265,7 +188,7 @@ async def get_club_events(
     limit: int = 20,
     db: Session = Depends(get_database)
 ):
-    """Get all events for a club"""
+    """Get club events - PUBLIC"""
     query = db.query(models.ClubEvent).filter(
         models.ClubEvent.club_id == club_id
     )
@@ -298,34 +221,53 @@ async def get_club_events(
             "max_participants": event.max_participants,
             "like_count": like_count,
             "image_url": event.image_url,
-            "created_at": event.created_at.isoformat()
+            "created_at": event.created_at.isoformat() if event.created_at else None
         })
     
     return result
 
-@router.get("/{club_id}/announcements")
-async def get_club_announcements(
-    club_id: int,
-    skip: int = 0,
-    limit: int = 20,
+@router.get("/events/{event_id}")
+async def get_event_details(
+    event_id: int,
     db: Session = Depends(get_database)
 ):
-    """Get club announcements"""
-    announcements = db.query(models.ClubAnnouncement).filter(
-        models.ClubAnnouncement.club_id == club_id
-    ).order_by(
-        models.ClubAnnouncement.created_at.desc()
-    ).offset(skip).limit(limit).all()
+    """Get event details - PUBLIC"""
+    event = db.query(models.ClubEvent).filter(
+        models.ClubEvent.id == event_id
+    ).first()
     
-    return [{
-        "id": ann.id,
-        "title": ann.title,
-        "content": ann.content,
-        "priority": ann.priority,
-        "created_at": ann.created_at.isoformat()
-    } for ann in announcements]
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+    
+    registration_count = db.query(models.EventRegistration).filter(
+        models.EventRegistration.event_id == event.id
+    ).count()
+    
+    like_count = db.query(models.EventLike).filter(
+        models.EventLike.event_id == event.id
+    ).count()
+    
+    return {
+        "id": event.id,
+        "title": event.title,
+        "description": event.description,
+        "event_date": event.event_date.isoformat(),
+        "location": event.location,
+        "status": event.status,
+        "registration_required": event.registration_required,
+        "registration_count": registration_count,
+        "max_participants": event.max_participants,
+        "like_count": like_count,
+        "image_url": event.image_url,
+        "club": {
+            "id": event.club.id,
+            "name": event.club.name,
+            "category": event.club.category
+        },
+        "created_at": event.created_at.isoformat() if event.created_at else None
+    }
 
-# ==================== USER ENDPOINTS ====================
+# ==================== USER ENDPOINTS (TOKEN REQUIRED) ====================
 
 @router.post("/{club_id}/follow")
 async def follow_club(
@@ -333,10 +275,19 @@ async def follow_club(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Follow a club"""
-    # Check if club exists
-    club = db.query(models.Club).filter(models.Club.id == club_id).first()
+    """Follow a club - REQUIRES AUTH"""
+    logger.info(f"=== FOLLOW REQUEST RECEIVED ===")
+    logger.info(f"Club ID: {club_id}")
+    logger.info(f"User ID: {user.id}")
+    logger.info(f"User Email: {user.email}")
+    
+    club = db.query(models.Club).filter(
+        models.Club.id == club_id,
+        models.Club.is_active == True
+    ).first()
+    
     if not club:
+        logger.warning(f"Club not found with id: {club_id}")
         raise HTTPException(status_code=404, detail="Club not found")
     
     # Check if already following
@@ -346,7 +297,8 @@ async def follow_club(
     ).first()
     
     if existing:
-        raise HTTPException(status_code=400, detail="Already following")
+        logger.warning(f"User {user.id} already following club {club_id}")
+        raise HTTPException(status_code=400, detail="Already following this club")
     
     # Create follow
     follow = models.ClubFollower(
@@ -356,27 +308,44 @@ async def follow_club(
     db.add(follow)
     db.commit()
     
-    return {"message": "Successfully followed club"}
+    # Get updated follower count
+    follower_count = db.query(models.ClubFollower).filter(
+        models.ClubFollower.club_id == club_id
+    ).count()
+    
+    logger.info(f"✅ User {user.id} successfully followed club {club_id}. Follower count: {follower_count}")
+    
+    return {"message": "Successfully followed club", "follower_count": follower_count}
 
-@router.delete("/{club_id}/follow")
+@router.post("/{club_id}/unfollow")
 async def unfollow_club(
     club_id: int,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Unfollow a club"""
+    """Unfollow a club - REQUIRES AUTH"""
+    logger.info(f"Unfollow request received for club_id: {club_id} by user_id: {user.id}")
+    
     follow = db.query(models.ClubFollower).filter(
         models.ClubFollower.club_id == club_id,
         models.ClubFollower.user_id == user.id
     ).first()
     
     if not follow:
+        logger.warning(f"User {user.id} not following club {club_id}")
         raise HTTPException(status_code=404, detail="Not following this club")
     
     db.delete(follow)
     db.commit()
     
-    return {"message": "Successfully unfollowed club"}
+    # Get updated follower count
+    follower_count = db.query(models.ClubFollower).filter(
+        models.ClubFollower.club_id == club_id
+    ).count()
+    
+    logger.info(f"User {user.id} successfully unfollowed club {club_id}. New follower count: {follower_count}")
+    
+    return {"message": "Successfully unfollowed club", "follower_count": follower_count}
 
 @router.get("/{club_id}/is-following")
 async def check_following_status(
@@ -384,7 +353,7 @@ async def check_following_status(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Check if user is following a club"""
+    """Check if user follows a club - REQUIRES AUTH"""
     follow = db.query(models.ClubFollower).filter(
         models.ClubFollower.club_id == club_id,
         models.ClubFollower.user_id == user.id
@@ -392,13 +361,37 @@ async def check_following_status(
     
     return {"is_following": follow is not None}
 
+@router.get("/user/following")
+async def get_user_following(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_database)
+):
+    """Get clubs user is following - REQUIRES AUTH"""
+    follows = db.query(models.ClubFollower).filter(
+        models.ClubFollower.user_id == user.id
+    ).all()
+    
+    club_ids = [f.club_id for f in follows]
+    
+    clubs = db.query(models.Club).filter(
+        models.Club.id.in_(club_ids),
+        models.Club.is_active == True
+    ).all()
+    
+    return [{
+        "id": club.id,
+        "name": club.name,
+        "category": club.category,
+        "logo_url": club.logo_url
+    } for club in clubs]
+
 @router.post("/events/{event_id}/register")
 async def register_for_event(
     event_id: int,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Register for an event"""
+    """Register for event - REQUIRES AUTH"""
     event = db.query(models.ClubEvent).filter(
         models.ClubEvent.id == event_id
     ).first()
@@ -438,25 +431,22 @@ async def register_for_event(
     return {"message": "Successfully registered for event"}
 
 @router.post("/events/{event_id}/like")
-async def like_event(
+async def toggle_event_like(
     event_id: int,
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Like an event"""
-    # Check if already liked
+    """Toggle event like - REQUIRES AUTH"""
     existing = db.query(models.EventLike).filter(
         models.EventLike.event_id == event_id,
         models.EventLike.user_id == user.id
     ).first()
     
     if existing:
-        # Unlike
         db.delete(existing)
         db.commit()
-        return {"message": "Event unliked"}
+        return {"message": "Event unliked", "liked": False}
     
-    # Like
     like = models.EventLike(
         event_id=event_id,
         user_id=user.id
@@ -464,7 +454,27 @@ async def like_event(
     db.add(like)
     db.commit()
     
-    return {"message": "Event liked"}
+    return {"message": "Event liked", "liked": True}
+
+@router.get("/user/my-club")
+async def get_my_club(
+    user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_database)
+):
+    """Get club managed by current user - REQUIRES AUTH"""
+    club = db.query(models.Club).filter(
+        models.Club.club_head_id == user.id,
+        models.Club.is_active == True
+    ).first()
+    
+    if not club:
+        raise HTTPException(status_code=404, detail="You are not managing any club")
+    
+    return {
+        "id": club.id,
+        "name": club.name,
+        "category": club.category
+    }
 
 # ==================== CLUB HEAD ENDPOINTS ====================
 
@@ -475,9 +485,9 @@ async def create_event(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Create a new event (Club Head only)"""
+    """Create event - CLUB HEAD ONLY"""
     if not is_club_head(user.id, club_id, db):
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail="Only club head can create events")
     
     new_event = models.ClubEvent(
         club_id=club_id,
@@ -487,7 +497,8 @@ async def create_event(
         location=event.location,
         registration_required=event.registration_required,
         max_participants=event.max_participants,
-        image_url=event.image_url
+        image_url=event.image_url,
+        status="scheduled"
     )
     
     db.add(new_event)
@@ -499,58 +510,6 @@ async def create_event(
         "event_id": new_event.id
     }
 
-@router.put("/{club_id}/events/{event_id}")
-async def update_event(
-    club_id: int,
-    event_id: int,
-    event_update: EventUpdate,
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_database)
-):
-    """Update an event (Club Head only)"""
-    if not is_club_head(user.id, club_id, db):
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    event = db.query(models.ClubEvent).filter(
-        models.ClubEvent.id == event_id,
-        models.ClubEvent.club_id == club_id
-    ).first()
-    
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    
-    # Update fields
-    for field, value in event_update.dict(exclude_unset=True).items():
-        setattr(event, field, value)
-    
-    db.commit()
-    
-    return {"message": "Event updated successfully"}
-
-@router.delete("/{club_id}/events/{event_id}")
-async def delete_event(
-    club_id: int,
-    event_id: int,
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_database)
-):
-    """Delete an event (Club Head only)"""
-    if not is_club_head(user.id, club_id, db):
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    event = db.query(models.ClubEvent).filter(
-        models.ClubEvent.id == event_id,
-        models.ClubEvent.club_id == club_id
-    ).first()
-    
-    if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
-    
-    db.delete(event)
-    db.commit()
-    
-    return {"message": "Event deleted successfully"}
-
 @router.post("/{club_id}/announcements")
 async def create_announcement(
     club_id: int,
@@ -558,9 +517,9 @@ async def create_announcement(
     user: models.User = Depends(get_current_user),
     db: Session = Depends(get_database)
 ):
-    """Create announcement (Club Head only)"""
+    """Create announcement - CLUB HEAD ONLY"""
     if not is_club_head(user.id, club_id, db):
-        raise HTTPException(status_code=403, detail="Not authorized")
+        raise HTTPException(status_code=403, detail="Only club head can create announcements")
     
     new_announcement = models.ClubAnnouncement(
         club_id=club_id,
@@ -571,116 +530,9 @@ async def create_announcement(
     
     db.add(new_announcement)
     db.commit()
+    db.refresh(new_announcement)
     
-    return {"message": "Announcement created successfully"}
-
-@router.get("/{club_id}/registrations")
-async def get_event_registrations(
-    club_id: int,
-    event_id: int,
-    user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_database)
-):
-    """Get event registrations (Club Head only)"""
-    if not is_club_head(user.id, club_id, db):
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    registrations = db.query(models.EventRegistration).filter(
-        models.EventRegistration.event_id == event_id
-    ).all()
-    
-    result = []
-    for reg in registrations:
-        user_data = db.query(models.User).filter(
-            models.User.id == reg.user_id
-        ).first()
-        
-        if user_data:
-            result.append({
-                "id": reg.id,
-                "user": {
-                    "name": user_data.full_name,
-                    "email": user_data.email,
-                    "department": user_data.department,
-                    "year": user_data.year
-                },
-                "registered_at": reg.created_at.isoformat()
-            })
-    
-    return result
-
-# # ==================== ADMIN ENDPOINTS ====================
-
-# @router.post("/")
-# async def create_club(
-#     club: ClubCreate,
-#     token: str = Depends(get_admin_token),
-#     db: Session = Depends(get_database)
-# ):
-#     """Create new club (Admin only)"""
-#     verify_admin_token(token, db)
-    
-#     # Find club head user
-#     head = db.query(models.User).filter(
-#         models.User.email == club.club_head_email
-#     ).first()
-    
-#     if not head:
-#         raise HTTPException(status_code=404, detail="Club head user not found")
-    
-#     new_club = models.Club(
-#         name=club.name,
-#         category=club.category,
-#         description=club.description,
-#         club_head_id=head.id
-#     )
-    
-#     db.add(new_club)
-#     db.commit()
-#     db.refresh(new_club)
-    
-#     return {
-#         "message": "Club created successfully",
-#         "club_id": new_club.id
-#     }
-
-# @router.put("/{club_id}")
-# async def update_club(
-#     club_id: int,
-#     club_update: ClubUpdate,
-#     token: str = Depends(get_admin_token),
-#     db: Session = Depends(get_database)
-# ):
-#     """Update club (Admin only)"""
-#     verify_admin_token(token, db)
-    
-#     club = db.query(models.Club).filter(models.Club.id == club_id).first()
-    
-#     if not club:
-#         raise HTTPException(status_code=404, detail="Club not found")
-    
-#     for field, value in club_update.dict(exclude_unset=True).items():
-#         setattr(club, field, value)
-    
-#     db.commit()
-    
-#     return {"message": "Club updated successfully"}
-
-# @router.delete("/{club_id}")
-# async def delete_club(
-#     club_id: int,
-#     token: str = Depends(get_admin_token),
-#     db: Session = Depends(get_database)
-# ):
-#     """Delete club (Admin only)"""
-#     verify_admin_token(token, db)
-    
-#     club = db.query(models.Club).filter(models.Club.id == club_id).first()
-    
-#     if not club:
-#         raise HTTPException(status_code=404, detail="Club not found")
-    
-#     club.is_active = False
-#     db.commit()
-    
-#     return {"message": "Club deleted successfully"}
+    return {
+        "message": "Announcement created successfully",
+        "announcement_id": new_announcement.id
+    }

@@ -16,53 +16,122 @@ import axios from 'axios';
 import API_URL from '../../config';
 
 const StudyBuddyScreen = ({ route, navigation }) => {
-  const { userId, courseCode, courseName } = route.params;
+  const { userId, courseCode: rawCourseCode, courseName } = route.params || {};
+  
+  const courseCode = rawCourseCode === 'undefined' || 
+                     !rawCourseCode || 
+                     rawCourseCode.trim() === '' 
+                     ? null 
+                     : rawCourseCode;
 
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedBuddy, setSelectedBuddy] = useState(null);
   const [requestMessage, setRequestMessage] = useState('');
   const [showMessageModal, setShowMessageModal] = useState(false);
+  const [courseFilter, setCourseFilter] = useState(null);
+  const [availableCourses, setAvailableCourses] = useState([]);
+  const [hasPreferences, setHasPreferences] = useState(false);
+  const [checkingPreferences, setCheckingPreferences] = useState(true);
 
   useEffect(() => {
-    findStudyBuddies();
-  }, [courseCode]); // Re-fetch when course changes
+    checkUserPreferences();
+  }, []);
+
+  useEffect(() => {
+    if (availableCourses.length > 0 && hasPreferences) {
+      if (courseCode) {
+        setCourseFilter(courseCode);
+      } else if (availableCourses.length > 0) {
+        setCourseFilter(availableCourses[0].course_code);
+      }
+    }
+  }, [availableCourses, hasPreferences]);
+
+  useEffect(() => {
+    if (courseFilter && hasPreferences) {
+      findStudyBuddies();
+    }
+  }, [courseFilter, hasPreferences]);
+
+  const checkUserPreferences = async () => {
+    try {
+      setCheckingPreferences(true);
+      const response = await axios.get(`${API_URL}/ai/preferences/${userId}`);
+      
+      if (!response.data.has_preferences) {
+        Alert.alert(
+          'Set Your Preferences First',
+          'To find the best study buddies, please set your study preferences first.',
+          [
+            {
+              text: 'Set Preferences',
+              onPress: () => {
+                navigation.navigate('StudyPreferences', { 
+                  userId,
+                  fromStudyBuddy: true
+                });
+              }
+            },
+            {
+              text: 'Cancel',
+              onPress: () => navigation.goBack(),
+              style: 'cancel'
+            }
+          ]
+        );
+        setHasPreferences(false);
+      } else {
+        setHasPreferences(true);
+        loadAvailableCourses();
+      }
+    } catch (error) {
+      console.error('Error checking preferences:', error);
+      Alert.alert('Error', 'Failed to check preferences');
+    } finally {
+      setCheckingPreferences(false);
+    }
+  };
+
+  const loadAvailableCourses = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/courses/my-courses/${userId}`);
+      setAvailableCourses(response.data || []);
+    } catch (error) {
+      console.error('Error loading courses:', error);
+    }
+  };
 
   const findStudyBuddies = async () => {
     try {
       setLoading(true);
       
-      // FIX: Build URL properly, don't send undefined
       let url = `${API_URL}/ai/study-buddies/${userId}?max_results=20`;
       
-      // Only add course_code if it's valid
-      if (courseCode && courseCode !== 'undefined' && courseCode.trim()) {
-        url += `&course_code=${courseCode}`;
+      if (courseFilter && courseFilter.trim()) {
+        url += `&course_code=${encodeURIComponent(courseFilter)}`;
       }
       
-      console.log('Fetching study buddies:', url); // Debug log
+      console.log('Fetching:', url);
       
       const response = await axios.get(url);
-      console.log('Response:', response.data); // Debug log
-      
       setMatches(response.data || []);
     } catch (error) {
-      console.error('Error finding study buddies:', error);
-      console.error('Error details:', error.response?.data); // More details
+      console.error('Error:', error);
       Alert.alert('Error', error.response?.data?.detail || 'Failed to find study buddies');
     } finally {
       setLoading(false);
     }
   };
 
-const sendBuddyRequest = async () => {
+  const sendBuddyRequest = async () => {
     if (!selectedBuddy) return;
 
     try {
       setLoading(true);
       await axios.post(`${API_URL}/ai/study-buddies/request/${userId}`, {
         target_user_id: selectedBuddy.user_id,
-        course_code: courseCode || '',
+        course_code: courseFilter || '',
         message: requestMessage
       });
 
@@ -71,13 +140,11 @@ const sendBuddyRequest = async () => {
       setRequestMessage('');
       setSelectedBuddy(null);
     } catch (error) {
-      console.error('Error sending request:', error);
-      Alert.alert('Error', 'Failed to send request');
+      Alert.alert('Error', error.response?.data?.detail || 'Failed to send request');
     } finally {
       setLoading(false);
     }
   };
-
 
   const getMatchScoreColor = (score) => {
     if (score >= 80) return '#10b981';
@@ -110,11 +177,10 @@ const sendBuddyRequest = async () => {
         </View>
       </View>
 
-      {match.complementary_skills.length > 0 && (
+      {match.complementary_skills?.length > 0 && (
         <View style={styles.skillsContainer}>
           <Text style={styles.sectionLabel}>
-            <Ionicons name="bulb-outline" size={14} color="#f59e0b" /> Complementary
-            Skills
+            <Ionicons name="bulb-outline" size={14} color="#f59e0b" /> Complementary Skills
           </Text>
           <View style={styles.skillsList}>
             {match.complementary_skills.map((skill, idx) => (
@@ -126,7 +192,7 @@ const sendBuddyRequest = async () => {
         </View>
       )}
 
-      {match.common_availability.length > 0 && (
+      {match.common_availability?.length > 0 && (
         <View style={styles.availabilityContainer}>
           <Text style={styles.sectionLabel}>
             <Ionicons name="time-outline" size={14} color="#3b82f6" /> Common Free Time
@@ -169,6 +235,80 @@ const sendBuddyRequest = async () => {
     </View>
   );
 
+  if (checkingPreferences) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Checking preferences...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!hasPreferences) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerTitle}>Study Buddies</Text>
+            <Text style={styles.headerSubtitle}>Setup Required</Text>
+          </View>
+        </View>
+
+        <View style={styles.setupContainer}>
+          <Ionicons name="settings-outline" size={80} color="#8b5cf6" />
+          <Text style={styles.setupTitle}>Setup Your Preferences</Text>
+          <Text style={styles.setupDescription}>
+            Before finding study buddies, let us know your study preferences.
+            This helps us match you with compatible students.
+          </Text>
+
+          <View style={styles.featureList}>
+            <View style={styles.featureItem}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+              <Text style={styles.featureText}>Better match accuracy</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+              <Text style={styles.featureText}>Find compatible study partners</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+              <Text style={styles.featureText}>Personalized recommendations</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity
+            style={styles.setupButton}
+            onPress={() => {
+              navigation.navigate('StudyPreferences', { 
+                userId,
+                fromStudyBuddy: true
+              });
+            }}
+          >
+            <Ionicons name="settings" size={20} color="#fff" />
+            <Text style={styles.setupButtonText}>Setup Preferences Now</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.skipButtonText}>Maybe Later</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -180,15 +320,56 @@ const sendBuddyRequest = async () => {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerTitle}>Study Buddies</Text>
-          <Text style={styles.headerSubtitle}>{courseName}</Text>
+          <Text style={styles.headerSubtitle}>
+            {courseName || (courseFilter ? `Course: ${courseFilter}` : 'All Courses')}
+          </Text>
         </View>
         <TouchableOpacity
-          style={styles.refreshButton}
-          onPress={findStudyBuddies}
+          style={styles.settingsButton}
+          onPress={() => navigation.navigate('StudyPreferences', { userId })}
         >
-          <Ionicons name="refresh" size={24} color="#fff" />
+          <Ionicons name="settings" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+
+      {availableCourses.length > 0 && (
+        <View style={styles.filterContainer}>
+          <Text style={styles.filterLabel}>Filter by Course:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <TouchableOpacity
+              style={[
+                styles.courseFilterButton,
+                !courseFilter && styles.courseFilterButtonActive
+              ]}
+              onPress={() => setCourseFilter(null)}
+            >
+              <Text style={[
+                styles.courseFilterText,
+                !courseFilter && styles.courseFilterTextActive
+              ]}>
+                All Courses
+              </Text>
+            </TouchableOpacity>
+            {availableCourses.map(course => (
+              <TouchableOpacity
+                key={course.id}
+                style={[
+                  styles.courseFilterButton,
+                  courseFilter === course.course_code && styles.courseFilterButtonActive
+                ]}
+                onPress={() => setCourseFilter(course.course_code)}
+              >
+                <Text style={[
+                  styles.courseFilterText,
+                  courseFilter === course.course_code && styles.courseFilterTextActive
+                ]}>
+                  {course.course_code}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {loading ? (
         <View style={styles.loadingContainer}>
@@ -214,10 +395,15 @@ const sendBuddyRequest = async () => {
           <Text style={styles.emptyStateSubtext}>
             Try enrolling in more courses or wait for more students to join
           </Text>
+          <TouchableOpacity
+            style={styles.emptyStateButton}
+            onPress={() => navigation.navigate('StudyPreferences', { userId })}
+          >
+            <Text style={styles.emptyStateButtonText}>Update Preferences</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* Message Modal */}
       <Modal
         animationType="slide"
         transparent={true}
@@ -300,8 +486,44 @@ const styles = StyleSheet.create({
     color: '#888',
     marginTop: 2
   },
-  refreshButton: {
+  settingsButton: {
     padding: 4
+  },
+  filterContainer: {
+    backgroundColor: '#1a1a1a',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a2a2a'
+  },
+  filterLabel: {
+    fontSize: 12,
+    color: '#888',
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1
+  },
+  courseFilterButton: {
+    backgroundColor: '#0a0a0a',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#2a2a2a'
+  },
+  courseFilterButtonActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6'
+  },
+  courseFilterText: {
+    fontSize: 13,
+    color: '#888',
+    fontWeight: '600'
+  },
+  courseFilterTextActive: {
+    color: '#fff'
   },
   loadingContainer: {
     flex: 1,
@@ -487,6 +709,83 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#888',
     textAlign: 'center'
+  },
+  emptyStateButton: {
+    backgroundColor: '#8b5cf6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginTop: 20
+  },
+  emptyStateButtonText: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: '600'
+  },
+  setupContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40
+  },
+  setupTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#fff',
+    marginTop: 24,
+    marginBottom: 12
+  },
+  setupDescription: {
+    fontSize: 15,
+    color: '#888',
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 32
+  },
+  featureList: {
+    width: '100%',
+    marginBottom: 32
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    gap: 12
+  },
+  featureText: {
+    fontSize: 15,
+    color: '#ccc',
+    fontWeight: '500'
+  },
+  setupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#8b5cf6',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    gap: 8,
+    width: '100%',
+    shadowColor: '#8b5cf6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5
+  },
+  setupButtonText: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '600'
+  },
+  skipButton: {
+    marginTop: 16,
+    paddingVertical: 12
+  },
+  skipButtonText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '600'
   },
   modalOverlay: {
     flex: 1,

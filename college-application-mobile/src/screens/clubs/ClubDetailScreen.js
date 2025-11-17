@@ -1,892 +1,567 @@
-// screens/ClubDetailScreen.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   ScrollView,
   TouchableOpacity,
+  StyleSheet,
   Image,
-  RefreshControl,
   ActivityIndicator,
   Alert,
-  Share,
-  Modal
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import API_URL from '../../config';
+import { API_URL } from '../../config';
 
 const ClubDetailScreen = ({ route, navigation }) => {
   const { clubId } = route.params;
   const [club, setClub] = useState(null);
-  const [events, setEvents] = useState([]);
-  const [announcements, setAnnouncements] = useState([]);
   const [isFollowing, setIsFollowing] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState('events');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('about');
-  const [user, setUser] = useState(null);
-  const [showEventModal, setShowEventModal] = useState(false);
-  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [following, setFollowing] = useState(false);
 
   useEffect(() => {
     fetchClubDetails();
-    fetchUser();
-  }, [clubId]);
-
-  const fetchUser = async () => {
-    try {
-      const userData = await AsyncStorage.getItem('user_data');
-      if (userData) {
-        setUser(JSON.parse(userData));
-      }
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-    }
-  };
+  }, []);
 
   const fetchClubDetails = async () => {
     try {
-      setLoading(true);
-      const token = await AsyncStorage.getItem('user_token');
-      
-      // Fetch club details
-      const clubResponse = await axios.get(`${API_URL}/clubs/${clubId}`, {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_URL}/clubs/${clubId}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      setClub(clubResponse.data);
-      
-      // Check if user is following
-      const followResponse = await axios.get(`${API_URL}/clubs/${clubId}/is-following`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setIsFollowing(followResponse.data.is_following);
-      
-      // Fetch club events
-      const eventsResponse = await axios.get(`${API_URL}/clubs/${clubId}/events`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setEvents(eventsResponse.data);
-      
-      // Fetch club announcements
-      const announcementsResponse = await axios.get(`${API_URL}/clubs/${clubId}/announcements`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAnnouncements(announcementsResponse.data);
+      const data = await response.json();
+      setClub(data);
+      setIsFollowing(data.is_following);
     } catch (error) {
       console.error('Error fetching club details:', error);
       Alert.alert('Error', 'Failed to load club details');
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchClubDetails();
-  };
-
-  const handleFollowClub = async () => {
+  const handleFollow = async () => {
+    setFollowing(true);
     try {
-      const token = await AsyncStorage.getItem('user_token');
+      const token = await AsyncStorage.getItem('token');
+      const endpoint = isFollowing ? 'unfollow' : 'follow';
       
-      if (isFollowing) {
-        // Unfollow
-        await axios.delete(`${API_URL}/clubs/${clubId}/follow`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        Alert.alert('Success', 'Club unfollowed');
-      } else {
-        // Follow
-        await axios.post(`${API_URL}/clubs/${clubId}/follow`, {}, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        Alert.alert('Success', 'Club followed');
+      const response = await fetch(`${API_URL}/clubs/${clubId}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        setIsFollowing(!isFollowing);
+        fetchClubDetails(); // Refresh to get updated follower count
       }
-      
-      setIsFollowing(!isFollowing);
     } catch (error) {
       console.error('Error following club:', error);
-      Alert.alert('Error', 'Failed to follow club');
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setFollowing(false);
     }
   };
-
-  const handleRegisterForEvent = async (eventId) => {
-    try {
-      const token = await AsyncStorage.getItem('user_token');
-      
-      await axios.post(`${API_URL}/clubs/events/${eventId}/register`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      Alert.alert('Success', 'Successfully registered for event');
-      fetchClubDetails(); // Refresh to update registration count
-    } catch (error) {
-      console.error('Error registering for event:', error);
-      Alert.alert('Error', 'Failed to register for event');
-    }
-  };
-
-  const handleLikeEvent = async (eventId) => {
-    try {
-      const token = await AsyncStorage.getItem('user_token');
-      
-      await axios.post(`${API_URL}/clubs/events/${eventId}/like`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      fetchClubDetails(); // Refresh to update like count
-    } catch (error) {
-      console.error('Error liking event:', error);
-      Alert.alert('Error', 'Failed to like event');
-    }
-  };
-
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: `Check out ${club.name} on CampusConnect! ${club.description}`,
-        title: club.name,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
-  };
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const renderAboutTab = () => (
-    <View style={styles.tabContent}>
-      <Text style={styles.description}>{club.description}</Text>
-      
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Club Head</Text>
-        <View style={styles.clubHeadInfo}>
-          <View style={styles.avatarPlaceholder}>
-            <Ionicons name="person" size={24} color="#8b5cf6" />
-          </View>
-          <View style={styles.clubHeadDetails}>
-            <Text style={styles.clubHeadName}>{club.club_head.name}</Text>
-            <Text style={styles.clubHeadEmail}>{club.club_head.email}</Text>
-          </View>
-        </View>
-      </View>
-      
-      <View style={styles.infoSection}>
-        <Text style={styles.sectionTitle}>Statistics</Text>
-        <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <Ionicons name="people" size={24} color="#3b82f6" />
-            <Text style={styles.statValue}>{club.follower_count}</Text>
-            <Text style={styles.statLabel}>Followers</Text>
-          </View>
-          <View style={styles.statCard}>
-            <Ionicons name="calendar" size={24} color="#10b981" />
-            <Text style={styles.statValue}>{club.upcoming_events.length}</Text>
-            <Text style={styles.statLabel}>Upcoming Events</Text>
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-
-  const renderEventsTab = () => (
-    <View style={styles.tabContent}>
-      {events.length > 0 ? (
-        events.map(event => (
-          <TouchableOpacity
-            key={event.id}
-            style={styles.eventCard}
-            onPress={() => {
-              setSelectedEvent(event);
-              setShowEventModal(true);
-            }}
-          >
-            {event.image_url ? (
-              <Image source={{ uri: event.image_url }} style={styles.eventImage} />
-            ) : (
-              <View style={styles.eventImagePlaceholder}>
-                <Ionicons name="calendar" size={30} color="#8b5cf6" />
-              </View>
-            )}
-            <View style={styles.eventInfo}>
-              <Text style={styles.eventTitle}>{event.title}</Text>
-              <Text style={styles.eventDate}>{formatDate(event.event_date)}</Text>
-              <Text style={styles.eventLocation}>{event.location}</Text>
-              <View style={styles.eventStats}>
-                <View style={styles.eventStat}>
-                  <Ionicons name="people" size={14} color="#666" />
-                  <Text style={styles.eventStatText}>
-                    {event.registration_count}/{event.max_participants || '∞'}
-                  </Text>
-                </View>
-                <View style={styles.eventStat}>
-                  <Ionicons name="heart" size={14} color="#666" />
-                  <Text style={styles.eventStatText}>{event.like_count}</Text>
-                </View>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.eventLikeButton}
-              onPress={() => handleLikeEvent(event.id)}
-            >
-              <Ionicons name="heart" size={20} color="#ef4444" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-        ))
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="calendar" size={50} color="#666" />
-          <Text style={styles.emptyText}>No upcoming events</Text>
-        </View>
-      )}
-    </View>
-  );
-
-  const renderAnnouncementsTab = () => (
-    <View style={styles.tabContent}>
-      {announcements.length > 0 ? (
-        announcements.map(announcement => (
-          <View key={announcement.id} style={styles.announcementCard}>
-            <View style={[
-              styles.announcementPriority,
-              announcement.priority === 'high' && styles.highPriority,
-              announcement.priority === 'normal' && styles.normalPriority,
-              announcement.priority === 'low' && styles.lowPriority
-            ]} />
-            <View style={styles.announcementContent}>
-              <Text style={styles.announcementTitle}>{announcement.title}</Text>
-              <Text style={styles.announcementText}>{announcement.content}</Text>
-              <Text style={styles.announcementDate}>
-                {formatDate(announcement.created_at)}
-              </Text>
-            </View>
-          </View>
-        ))
-      ) : (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="megaphone" size={50} color="#666" />
-          <Text style={styles.emptyText}>No announcements</Text>
-        </View>
-      )}
-    </View>
-  );
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#8b5cf6" />
+        <ActivityIndicator size="large" color="#7C3AED" />
       </View>
     );
   }
 
+  if (!club) return null;
+
   return (
-    <View style={styles.container}>
-      {/* Header with cover and logo */}
+    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* Header */}
       <View style={styles.header}>
-        {club.cover_url ? (
-          <Image source={{ uri: club.cover_url }} style={styles.coverImage} />
-        ) : (
-          <View style={styles.coverPlaceholder} />
-        )}
+        <Image
+          source={{ uri: club.cover_url || 'https://via.placeholder.com/400' }}
+          style={styles.coverImage}
+        />
+        
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-left" size={24} color="#FFF" />
+        </TouchableOpacity>
+
         <View style={styles.headerContent}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => navigation.goBack()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-          
-          <View style={styles.clubLogoContainer}>
-            {club.logo_url ? (
-              <Image source={{ uri: club.logo_url }} style={styles.clubLogo} />
-            ) : (
-              <View style={styles.clubLogoPlaceholder}>
-                <Ionicons name="business" size={40} color="#8b5cf6" />
+          <View style={styles.logoContainer}>
+            <Image
+              source={{ uri: club.logo_url || 'https://via.placeholder.com/100' }}
+              style={styles.logo}
+            />
+          </View>
+
+          <Text style={styles.clubName}>{club.name}</Text>
+          <Text style={styles.clubDescription}>{club.description}</Text>
+
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Icon name="account-group" size={20} color="#6B7280" />
+              <Text style={styles.statText}>
+                {club.follower_count} followers
+              </Text>
+            </View>
+
+            {club.club_head && (
+              <View style={styles.stat}>
+                <Icon name="email" size={20} color="#6B7280" />
+                <Text style={styles.statText}>{club.club_head.email}</Text>
               </View>
             )}
           </View>
-          
-          <View style={styles.headerActions}>
-            <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-              <Ionicons name="share-outline" size={24} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[
-                styles.followButton,
-                isFollowing && styles.followingButton
-              ]}
-              onPress={handleFollowClub}
-            >
-              <Text style={[
-                styles.followButtonText,
-                isFollowing && styles.followingButtonText
-              ]}>
-                {isFollowing ? 'Following' : 'Follow'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
 
-      {/* Club info */}
-      <View style={styles.clubInfoContainer}>
-        <Text style={styles.clubName}>{club.name}</Text>
-        <Text style={styles.clubCategory}>{club.category}</Text>
+          <TouchableOpacity
+            style={[
+              styles.followButtonLarge,
+              isFollowing && styles.followingButtonLarge,
+            ]}
+            onPress={handleFollow}
+            disabled={following}
+          >
+            <Icon
+              name={isFollowing ? 'account-check' : 'account-plus'}
+              size={20}
+              color={isFollowing ? '#7C3AED' : '#FFF'}
+            />
+            <Text
+              style={[
+                styles.followButtonLargeText,
+                isFollowing && styles.followingButtonLargeText,
+              ]}
+            >
+              {following ? 'Loading...' : isFollowing ? 'Following' : 'Follow'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Tabs */}
-      <View style={styles.tabsContainer}>
+      <View style={styles.tabs}>
         <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'about' && styles.activeTab
-          ]}
-          onPress={() => setActiveTab('about')}
-        >
-          <Text style={[
-            styles.tabText,
-            activeTab === 'about' && styles.activeTabText
-          ]}>
-            About
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'events' && styles.activeTab
-          ]}
+          style={[styles.tab, activeTab === 'events' && styles.activeTab]}
           onPress={() => setActiveTab('events')}
         >
-          <Text style={[
-            styles.tabText,
-            activeTab === 'events' && styles.activeTabText
-          ]}>
-            Events
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'events' && styles.activeTabText,
+            ]}
+          >
+            Events & Announcements
           </Text>
         </TouchableOpacity>
+
         <TouchableOpacity
-          style={[
-            styles.tab,
-            activeTab === 'announcements' && styles.activeTab
-          ]}
-          onPress={() => setActiveTab('announcements')}
+          style={[styles.tab, activeTab === 'about' && styles.activeTab]}
+          onPress={() => setActiveTab('about')}
         >
-          <Text style={[
-            styles.tabText,
-            activeTab === 'announcements' && styles.activeTabText
-          ]}>
-            Announcements
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'about' && styles.activeTabText,
+            ]}
+          >
+            About
           </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tab content */}
-      <ScrollView
-        style={styles.content}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-      >
-        {activeTab === 'about' && renderAboutTab()}
-        {activeTab === 'events' && renderEventsTab()}
-        {activeTab === 'announcements' && renderAnnouncementsTab()}
-      </ScrollView>
-
-      {/* Event Modal */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={showEventModal}
-        onRequestClose={() => setShowEventModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Event Details</Text>
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() => setShowEventModal(false)}
-              >
-                <Ionicons name="close" size={24} color="#fff" />
-              </TouchableOpacity>
-            </View>
-            
-            {selectedEvent && (
-              <ScrollView style={styles.modalBody}>
-                {selectedEvent.image_url ? (
-                  <Image source={{ uri: selectedEvent.image_url }} style={styles.modalImage} />
-                ) : (
-                  <View style={styles.modalImagePlaceholder}>
-                    <Ionicons name="calendar" size={50} color="#8b5cf6" />
-                  </View>
-                )}
-                
-                <Text style={styles.modalEventTitle}>{selectedEvent.title}</Text>
-                <Text style={styles.modalEventDescription}>{selectedEvent.description}</Text>
-                
-                <View style={styles.modalEventInfo}>
-                  <View style={styles.modalInfoItem}>
-                    <Ionicons name="calendar" size={20} color="#8b5cf6" />
-                    <Text style={styles.modalInfoText}>
-                      {formatDate(selectedEvent.event_date)}
-                    </Text>
-                  </View>
-                  <View style={styles.modalInfoItem}>
-                    <Ionicons name="location" size={20} color="#8b5cf6" />
-                    <Text style={styles.modalInfoText}>{selectedEvent.location}</Text>
-                  </View>
-                  <View style={styles.modalInfoItem}>
-                    <Ionicons name="people" size={20} color="#8b5cf6" />
-                    <Text style={styles.modalInfoText}>
-                      {selectedEvent.registration_count}/{selectedEvent.max_participants || '∞'} registered
-                    </Text>
-                  </View>
-                </View>
-                
-                {selectedEvent.registration_required && (
-                  <TouchableOpacity
-                    style={styles.registerButton}
-                    onPress={() => {
-                      handleRegisterForEvent(selectedEvent.id);
-                      setShowEventModal(false);
-                    }}
-                  >
-                    <Text style={styles.registerButtonText}>Register for Event</Text>
-                  </TouchableOpacity>
-                )}
-              </ScrollView>
-            )}
+      {/* Content */}
+      {activeTab === 'events' ? (
+        <View style={styles.content}>
+          <View style={styles.contentHeader}>
+            <Text style={styles.contentTitle}>Events & Announcements</Text>
+            <TouchableOpacity
+              style={styles.newPostButton}
+              onPress={() =>
+                navigation.navigate('CreateEvent', { clubId: club.id })
+              }
+            >
+              <Icon name="plus" size={20} color="#FFF" />
+              <Text style={styles.newPostButtonText}>New Post</Text>
+            </TouchableOpacity>
           </View>
+
+          {club.events && club.events.map((event) => (
+            <EventCard key={event.id} event={event} />
+          ))}
+
+          {club.announcements && club.announcements.map((announcement) => (
+            <AnnouncementCard
+              key={announcement.id}
+              announcement={announcement}
+            />
+          ))}
+
+          {(!club.events || club.events.length === 0) &&
+           (!club.announcements || club.announcements.length === 0) && (
+            <Text style={styles.emptyText}>No events or announcements yet</Text>
+          )}
         </View>
-      </Modal>
-    </View>
+      ) : (
+        <View style={styles.content}>
+          <AboutSection club={club} />
+        </View>
+      )}
+    </ScrollView>
   );
 };
+
+const EventCard = ({ event }) => (
+  <View style={styles.eventCard}>
+    <View style={styles.eventBadge}>
+      <Text style={styles.eventBadgeText}>Important</Text>
+    </View>
+
+    <View style={styles.eventLikes}>
+      <Icon name="heart-outline" size={20} color="#6B7280" />
+      <Text style={styles.eventLikesText}>{event.like_count || 0}</Text>
+    </View>
+
+    <Text style={styles.eventTitle}>{event.title}</Text>
+    <Text style={styles.eventDescription} numberOfLines={3}>
+      {event.description}
+    </Text>
+
+    <View style={styles.eventDate}>
+      <Icon name="calendar" size={16} color="#6B7280" />
+      <Text style={styles.eventDateText}>
+        {new Date(event.event_date).toLocaleDateString('en-US', {
+          month: 'long',
+          day: 'numeric',
+          year: 'numeric'
+        })}
+      </Text>
+    </View>
+  </View>
+);
+
+const AnnouncementCard = ({ announcement }) => (
+  <View style={styles.announcementCard}>
+    <Text style={styles.announcementTitle}>{announcement.title}</Text>
+    <Text style={styles.announcementContent} numberOfLines={4}>
+      {announcement.content}
+    </Text>
+    <Text style={styles.announcementDate}>
+      {new Date(announcement.created_at).toLocaleDateString()}
+    </Text>
+  </View>
+);
+
+const AboutSection = ({ club }) => (
+  <View style={styles.aboutSection}>
+    {club.club_head && (
+      <View style={styles.aboutCard}>
+        <Text style={styles.aboutCardTitle}>Club Admin</Text>
+        <Text style={styles.aboutCardText}>{club.club_head.name}</Text>
+        <Text style={styles.aboutCardSubtext}>{club.club_head.email}</Text>
+      </View>
+    )}
+
+    <View style={styles.aboutCard}>
+      <Text style={styles.aboutCardTitle}>Category</Text>
+      <View style={styles.categoryBadge}>
+        <Text style={styles.categoryBadgeText}>{club.category}</Text>
+      </View>
+    </View>
+
+    <View style={styles.aboutCard}>
+      <Text style={styles.aboutCardTitle}>Community</Text>
+      <Text style={styles.aboutCardText}>
+        {club.follower_count} active members
+      </Text>
+    </View>
+  </View>
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FAFAFA',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0a0a0a',
+    backgroundColor: '#FAFAFA',
   },
   header: {
-    position: 'relative',
-    height: 200,
+    backgroundColor: '#EF4444',
+    paddingBottom: 120,
   },
   coverImage: {
     width: '100%',
-    height: '100%',
-  },
-  coverPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#1a1a1a',
-  },
-  headerContent: {
+    height: 200,
     position: 'absolute',
     top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    paddingHorizontal: 20,
-    paddingBottom: 20,
   },
   backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
   },
-  clubLogoContainer: {
-    marginBottom: 20,
-  },
-  clubLogo: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: '#0a0a0a',
-  },
-  clubLogoPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: '#1a1a1a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#0a0a0a',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 10,
-  },
-  followButton: {
+  headerContent: {
     paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#8b5cf6',
+    paddingTop: 220,
+    alignItems: 'center',
   },
-  followingButton: {
-    backgroundColor: '#1a1a1a',
-    borderWidth: 1,
-    borderColor: '#8b5cf6',
+  logoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#FFF',
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  followButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  followingButtonText: {
-    color: '#8b5cf6',
-  },
-  clubInfoContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    backgroundColor: '#1a1a1a',
+  logo: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   clubName: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 5,
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: 8,
   },
-  clubCategory: {
+  clubDescription: {
     fontSize: 14,
-    color: '#8b5cf6',
+    color: '#FFF',
+    textAlign: 'center',
+    marginBottom: 20,
   },
-  tabsContainer: {
+  stats: {
     flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderTopWidth: 1,
-    borderTopColor: '#2a2a2a',
+    gap: 24,
+    marginBottom: 20,
+  },
+  stat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  statText: {
+    fontSize: 14,
+    color: '#FFF',
+  },
+  followButtonLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  followingButtonLarge: {
+    backgroundColor: '#FFF',
+  },
+  followButtonLargeText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  followingButtonLargeText: {
+    color: '#7C3AED',
+  },
+  tabs: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   tab: {
     flex: 1,
-    paddingVertical: 15,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   activeTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#8b5cf6',
+    borderBottomColor: '#7C3AED',
   },
   tabText: {
-    fontSize: 16,
-    color: '#888',
+    fontSize: 14,
+    color: '#6B7280',
     fontWeight: '600',
   },
   activeTabText: {
-    color: '#fff',
+    color: '#7C3AED',
   },
   content: {
-    flex: 1,
-  },
-  tabContent: {
     padding: 20,
   },
-  description: {
-    fontSize: 16,
-    color: '#ccc',
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  infoSection: {
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 15,
-  },
-  clubHeadInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    padding: 15,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  clubHeadDetails: {
-    flex: 1,
-  },
-  clubHeadName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 5,
-  },
-  clubHeadEmail: {
-    fontSize: 14,
-    color: '#888',
-  },
-  statsGrid: {
+  contentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: '#1a1a1a',
-    padding: 15,
-    borderRadius: 10,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    marginHorizontal: 5,
+    marginBottom: 20,
   },
-  statValue: {
+  contentTitle: {
     fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-    marginVertical: 5,
+    fontWeight: 'bold',
+    color: '#1F2937',
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#888',
-    textTransform: 'uppercase',
+  newPostButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#7C3AED',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  newPostButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
   },
   eventCard: {
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  eventBadge: {
+    backgroundColor: '#7C3AED',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  eventBadgeText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  eventLikes: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
     flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  eventImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
-    marginRight: 15,
-  },
-  eventImagePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 15,
+    gap: 4,
   },
-  eventInfo: {
-    flex: 1,
+  eventLikesText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   eventTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 5,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  eventDescription: {
+    fontSize: 14,
+    color: '#6B7280',
+    lineHeight: 20,
+    marginBottom: 16,
   },
   eventDate: {
-    fontSize: 14,
-    color: '#8b5cf6',
-    marginBottom: 5,
-  },
-  eventLocation: {
-    fontSize: 14,
-    color: '#888',
-    marginBottom: 5,
-  },
-  eventStats: {
-    flexDirection: 'row',
-  },
-  eventStat: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 15,
+    gap: 6,
   },
-  eventStatText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
-  eventLikeButton: {
-    justifyContent: 'center',
-    alignItems: 'center',
+  eventDateText: {
+    fontSize: 14,
+    color: '#6B7280',
   },
   announcementCard: {
-    flexDirection: 'row',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 10,
-    padding: 15,
-    marginBottom: 15,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-  },
-  announcementPriority: {
-    width: 4,
-    borderTopLeftRadius: 2,
-    borderBottomLeftRadius: 2,
-    marginRight: 15,
-  },
-  highPriority: {
-    backgroundColor: '#ef4444',
-  },
-  normalPriority: {
-    backgroundColor: '#f59e0b',
-  },
-  lowPriority: {
-    backgroundColor: '#10b981',
-  },
-  announcementContent: {
-    flex: 1,
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#7C3AED',
   },
   announcementTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 5,
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 8,
   },
-  announcementText: {
+  announcementContent: {
     fontSize: 14,
-    color: '#ccc',
-    marginBottom: 5,
+    color: '#6B7280',
+    lineHeight: 20,
+    marginBottom: 8,
   },
   announcementDate: {
     fontSize: 12,
-    color: '#666',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 50,
+    color: '#9CA3AF',
   },
   emptyText: {
+    textAlign: 'center',
     fontSize: 16,
-    color: '#666',
-    marginTop: 15,
+    color: '#9CA3AF',
+    marginTop: 40,
   },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  aboutSection: {
+    gap: 16,
   },
-  modalContent: {
-    width: '90%',
-    maxHeight: '80%',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  aboutCard: {
+    backgroundColor: '#FFF',
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2a2a2a',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  modalTitle: {
-    fontSize: 18,
+  aboutCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#1F2937',
+    marginBottom: 8,
+  },
+  aboutCardText: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  aboutCardSubtext: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 4,
+  },
+  categoryBadge: {
+    backgroundColor: '#7C3AED',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  categoryBadgeText: {
+    color: '#FFF',
     fontWeight: '600',
-    color: '#fff',
-  },
-  closeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalBody: {
-    padding: 20,
-  },
-  modalImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 10,
-    marginBottom: 20,
-  },
-  modalImagePlaceholder: {
-    width: '100%',
-    height: 200,
-    borderRadius: 10,
-    backgroundColor: '#2a2a2a',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalEventTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-    marginBottom: 10,
-  },
-  modalEventDescription: {
-    fontSize: 16,
-    color: '#ccc',
-    lineHeight: 24,
-    marginBottom: 20,
-  },
-  modalEventInfo: {
-    marginBottom: 20,
-  },
-  modalInfoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  modalInfoText: {
-    fontSize: 16,
-    color: '#ccc',
-    marginLeft: 10,
-  },
-  registerButton: {
-    backgroundColor: '#8b5cf6',
-    paddingVertical: 15,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  registerButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
   },
 });
 

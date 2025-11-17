@@ -7,9 +7,9 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
   KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,19 +17,17 @@ import { API_URL } from '../../config';
 
 const UpdateClubHeadScreen = ({ route, navigation }) => {
   const { clubId, currentHead } = route.params;
-  const [clubHeadEmail, setClubHeadEmail] = useState('');
+  const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
-    // Validation
-    if (!clubHeadEmail) {
-      Alert.alert('Error', 'Please enter a club head email');
+    if (!email.trim()) {
+      Alert.alert('Error', 'Please enter an email address');
       return;
     }
 
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(clubHeadEmail)) {
+    if (!emailRegex.test(email)) {
       Alert.alert('Error', 'Please enter a valid email address');
       return;
     }
@@ -38,26 +36,28 @@ const UpdateClubHeadScreen = ({ route, navigation }) => {
 
     try {
       const token = await AsyncStorage.getItem('admin_token');
+      
       const response = await fetch(`${API_URL}/admin/clubs/${clubId}/head`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ club_head_email: clubHeadEmail })
+        body: JSON.stringify({ club_head_email: email })
       });
 
+      const data = await response.json();
+
       if (response.ok) {
-        Alert.alert('Success', 'Club head updated successfully!', [
+        Alert.alert('Success', 'Club head updated successfully', [
           { text: 'OK', onPress: () => navigation.goBack() }
         ]);
       } else {
-        const error = await response.json();
-        Alert.alert('Error', error.detail || 'Failed to update club head');
+        Alert.alert('Error', data.detail || 'Failed to update club head');
       }
     } catch (error) {
       console.error('Error updating club head:', error);
-      Alert.alert('Error', 'Failed to update club head');
+      Alert.alert('Error', 'Network error. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -73,52 +73,53 @@ const UpdateClubHeadScreen = ({ route, navigation }) => {
           <Ionicons name="close" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Update Club Head</Text>
-        <TouchableOpacity onPress={handleSubmit} disabled={loading}>
-          {loading ? (
-            <ActivityIndicator size="small" color="#8b5cf6" />
-          ) : (
-            <Text style={styles.submitText}>Update</Text>
-          )}
-        </TouchableOpacity>
+        <View style={{ width: 24 }} />
       </View>
 
       <View style={styles.content}>
-        <View style={styles.currentHeadSection}>
-          <Text style={styles.sectionTitle}>Current Club Head</Text>
-          {currentHead ? (
+        {currentHead && (
+          <View style={styles.currentHeadSection}>
+            <Text style={styles.sectionTitle}>Current Club Head</Text>
             <View style={styles.currentHeadCard}>
-              <View style={styles.headAvatar}>
-                <Text style={styles.headAvatarText}>
-                  {currentHead.name.charAt(0)}
-                </Text>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>{currentHead.name.charAt(0)}</Text>
               </View>
-              <View style={styles.headInfo}>
-                <Text style={styles.headName}>{currentHead.name}</Text>
-                <Text style={styles.headEmail}>{currentHead.email}</Text>
+              <View>
+                <Text style={styles.currentHeadName}>{currentHead.name}</Text>
+                <Text style={styles.currentHeadEmail}>{currentHead.email}</Text>
               </View>
             </View>
-          ) : (
-            <View style={styles.noCurrentHead}>
-              <Text style={styles.noCurrentHeadText}>No club head assigned</Text>
-            </View>
-          )}
-        </View>
+          </View>
+        )}
 
-        <View style={styles.inputSection}>
+        <View style={styles.formSection}>
           <Text style={styles.sectionTitle}>New Club Head</Text>
           <Text style={styles.label}>Email Address *</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter email of new club head"
+            placeholder="Enter new club head email"
             placeholderTextColor="#666"
             keyboardType="email-address"
-            value={clubHeadEmail}
-            onChangeText={setClubHeadEmail}
+            autoCapitalize="none"
+            value={email}
+            onChangeText={setEmail}
           />
           <Text style={styles.helpText}>
             This user must already be registered in the system
           </Text>
         </View>
+
+        <TouchableOpacity
+          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
+          onPress={handleSubmit}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.submitButtonText}>Update Club Head</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -144,11 +145,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#fff'
   },
-  submitText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#8b5cf6'
-  },
   content: {
     flex: 1,
     padding: 16
@@ -157,10 +153,10 @@ const styles = StyleSheet.create({
     marginBottom: 32
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     color: '#fff',
-    marginBottom: 16
+    marginBottom: 12
   },
   currentHeadCard: {
     flexDirection: 'row',
@@ -171,7 +167,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a2a2a'
   },
-  headAvatar: {
+  avatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
@@ -180,44 +176,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12
   },
-  headAvatarText: {
+  avatarText: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff'
   },
-  headInfo: {
-    flex: 1
-  },
-  headName: {
+  currentHeadName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 4
   },
-  headEmail: {
+  currentHeadEmail: {
     fontSize: 14,
     color: '#8b5cf6'
   },
-  noCurrentHead: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#2a2a2a',
-    alignItems: 'center'
-  },
-  noCurrentHeadText: {
-    fontSize: 16,
-    color: '#666'
-  },
-  inputSection: {
+  formSection: {
     marginBottom: 32
   },
   label: {
     fontSize: 16,
     fontWeight: '600',
-    marginBottom: 8,
-    color: '#fff'
+    color: '#fff',
+    marginBottom: 8
   },
   input: {
     backgroundColor: '#1a1a1a',
@@ -226,12 +207,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#2a2a2a',
-    color: '#fff'
+    color: '#fff',
+    marginBottom: 8
   },
   helpText: {
     fontSize: 12,
-    color: '#666',
-    marginTop: 8
+    color: '#666'
+  },
+  submitButton: {
+    backgroundColor: '#8b5cf6',
+    borderRadius: 8,
+    padding: 16,
+    alignItems: 'center'
+  },
+  submitButtonDisabled: {
+    opacity: 0.6
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff'
   }
 });
 

@@ -51,13 +51,26 @@ const ManageClubsScreen = ({ navigation }) => {
     fetchClubs();
   };
 
-  const handleEditClub = (clubId) => {
-    navigation.navigate('EditClub', { clubId });
-  };
-
-  const handleViewClub = (clubId) => {
+// In ManageClubsScreen.js - Add debugging
+const handleViewClub = (clubId) => {
+  console.log('Navigating to AdminClubDetail with clubId:', clubId);
+  try {
     navigation.navigate('AdminClubDetail', { clubId });
-  };
+  } catch (error) {
+    console.error('Navigation error:', error);
+    Alert.alert('Error', 'Failed to navigate to club details');
+  }
+};
+
+const handleEditClub = (clubId) => {
+  console.log('Navigating to EditClub with clubId:', clubId);
+  try {
+    navigation.navigate('EditClub', { clubId });
+  } catch (error) {
+    console.error('Navigation error:', error);
+    Alert.alert('Error', 'Failed to navigate to edit club');
+  }
+};
 
   const handleDeleteClub = (clubId, clubName) => {
     Alert.alert(

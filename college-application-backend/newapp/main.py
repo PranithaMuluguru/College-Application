@@ -49,7 +49,7 @@ from .admin_auth import router as admin_auth_router
 # from .routes.calendar import router as calendar_router
 # # from .middleware.performance import PerformanceMiddleware, SystemMetricsMiddleware
 # # from .config.settings import settings
-from .club_routes import router as club_routes_router
+from .club_routes import router as club_routes
 from .admin_routes import router as admin_router
 
 logging.basicConfig(level=logging.INFO)
@@ -119,7 +119,7 @@ app.include_router(admin_auth_router)
 # Include routers
 app.include_router(course_routes.router)
 app.include_router(study_buddy_routes.router)
-app.include_router(club_routes_router)  # /clubs
+app.include_router(club_routes)  # /clubs
 app.include_router(admin_router)  # /admin
 app.include_router(study_buddy_router)  # /study-buddy
 # app.include_router(maps_router)  # /maps
@@ -357,7 +357,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None):
 def calculate_cgpa(grades):
     """Calculate CGPA based on grades"""
     grade_points = {
-        'A+': 10, 'A': 9, 'B+': 8, 'B': 7, 'C+': 6, 'C': 5, 'D': 4, 'F': 0
+        'S': 10, 'A': 9, 'B': 8, 'C': 7, 'D': 6, 'E': 5, 'W': 0, 'U': 0
     }
     
     total_points = 0
@@ -2028,17 +2028,24 @@ async def clear_chat_history(
 # ================ ADMIN AI ENDPOINTS ================
 @app.get("/ai/question-queue")
 async def get_question_queue(
-    status: Optional[str] = "unanswered",
+    status: Optional[str] = Query("unanswered"),
     db: Session = Depends(get_db)
 ):
-    """Get unanswered questions (Admin)"""
+    """Get unanswered questions - CASE INSENSITIVE FIX"""
+    
+    # Map frontend status to database enum values
+    status_map = {
+        'unanswered': 'UNANSWERED',
+        'answered': 'ANSWERED', 
+        'duplicate': 'DUPLICATE'
+    }
+    
+    db_status = status_map.get(status.lower(), 'UNANSWERED')
     
     query = db.query(models.UnansweredQuestion)
     
     if status:
-        query = query.filter(
-            models.UnansweredQuestion.status == status
-        )
+        query = query.filter(models.UnansweredQuestion.status == db_status)
     
     questions = query.order_by(
         models.UnansweredQuestion.ask_count.desc(),
@@ -2050,17 +2057,38 @@ async def get_question_queue(
         "questions": [
             {
                 "id": q.id,
-                "question": q.question_text,
+                "question_text": q.question_text,  # Use correct field name
                 "category": q.category,
                 "ask_count": q.ask_count,
-                "status": q.status.value,
-                "created_at": q.created_at.isoformat(),
-                "confidence_score": q.confidence_score
+                "status": q.status.value.lower(),  # Convert to lowercase for frontend
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+                "confidence_score": q.confidence_score,
+                "admin_answer": q.admin_answer
             }
             for q in questions
         ]
     }
-
+# Add to your FastAPI app
+@app.get("/ai/debug-all-questions")
+async def debug_all_questions(db: Session = Depends(get_db)):
+    """Debug endpoint to see all questions in the database"""
+    questions = db.query(models.UnansweredQuestion).all()
+    
+    return {
+        "total": len(questions),
+        "questions": [
+            {
+                "id": q.id,
+                "question_text": q.question_text,
+                "category": q.category,
+                "ask_count": q.ask_count,
+                "status": q.status.value if q.status else None,
+                "created_at": q.created_at.isoformat() if q.created_at else None,
+                "user_id": q.user_id
+            }
+            for q in questions
+        ]
+    }
 @app.post("/ai/add-answer")
 async def add_answer_to_knowledge(
     request: AddAnswerRequest,
@@ -2076,8 +2104,9 @@ async def add_answer_to_knowledge(
     if not question:
         raise HTTPException(status_code=404, detail="Question not found")
     
-    # Add to knowledge base
+    # Add to knowledge base with proper formatting
     kb_entry = models.KnowledgeBase(
+        title=f"Q: {question.question_text[:100]}...",  # Use question as title
         category=request.category or question.category,
         content=f"Q: {question.question_text}\n\nA: {request.answer}",
         source_url="admin_added",
@@ -2114,9 +2143,9 @@ async def add_answer_to_knowledge(
     
     return {
         "message": "Answer added successfully",
-        "resolved_similar_questions": resolved_count
+        "resolved_similar_questions": resolved_count,
+        "kb_entry_id": kb_entry.id
     }
-
 @app.get("/ai/analytics")
 async def get_ai_analytics(db: Session = Depends(get_db)):
     """Get AI analytics (Admin)"""
